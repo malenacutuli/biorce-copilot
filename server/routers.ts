@@ -5,7 +5,8 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { invokeLLM } from "./_core/llm";
-  import {
+import { runBiorceOrchestrator, getAvailableAgents } from "./agentOrchestrator";
+import {
   countKnowledgeItems, countOpenDiscrepancies, countUnreadAlerts,
   countPartnersByStage, createAlert, createCiEvent, createKnowledgeItem,
   createPartner, createRegulatoryItem, getAlerts, getCiEvents, getCompetitors,
@@ -257,12 +258,14 @@ const copilotRouter = router({
         role: z.enum(["user", "assistant"]),
         content: z.string(),
       })).default([]),
+      useOrchestrator: z.boolean().default(true),
     }))
     .mutation(async ({ input }) => {
       // Fetch relevant context from knowledge base
-      const relevantItems = await getKnowledgeItems({ search: input.question.slice(0, 100), limit: 5 });
+      const relevantItems = await getKnowledgeItems({ search: input.question.slice(0, 100), limit: 8 });
       const regulatoryContext = await getRegulatoryItems({ limit: 10 });
       const competitorContext = await getCompetitors();
+      const partnerContext = await getPartners({ limit: 15 });
 
       const knowledgeContext = relevantItems.map(item =>
         `[SOURCE: ${item.sourceName ?? "Biorce Intelligence"} | ${item.verificationStatus.toUpperCase()} | ${item.category}]\n${item.title}\n${item.summary ?? item.content.slice(0, 500)}`
@@ -276,48 +279,50 @@ const copilotRouter = router({
         `[COMPETITOR: ${c.name} | Threat: ${c.threatLevel}] ${c.description ?? ""}`
       ).join("\n");
 
+      const partnerCtx = partnerContext.map(p =>
+        `[PARTNER: ${p.name} | ${p.tier}/${p.stage}] ${p.type} — ${p.description ?? ""}`
+      ).join("\n");
+
+      if (input.useOrchestrator) {
+        // Multi-agent orchestrated answer
+        const { answer, agentResults } = await runBiorceOrchestrator({
+          question: input.question,
+          conversationHistory: input.conversationHistory,
+          knowledgeBase: knowledgeContext,
+          regulatoryContext: regulatoryCtx,
+          competitorContext: competitorCtx,
+          partnerContext: partnerCtx,
+        });
+        return {
+          answer: null,
+          orchestratedAnswer: answer,
+          agentResults,
+          sourcesUsed: relevantItems.map(i => ({ id: i.id, title: i.title, sourceName: i.sourceName, verificationStatus: i.verificationStatus })),
+        };
+      }
+
+      // Legacy single-agent fallback
       const systemPrompt = `You are the Biorce Strategy Copilot — an internal executive intelligence assistant for Biorce, a clinical AI infrastructure company.
-
-RULES (non-negotiable):
-1. ONLY cite primary sources from the knowledge base provided. Never fabricate citations.
-2. Every factual claim MUST include a source citation in the format [SOURCE: name].
-3. Distinguish clearly between VERIFIED facts and INFERRED relationships.
-4. Never speculate about confidential client data.
-5. If you don't have sufficient verified information to answer, say so explicitly.
-6. Focus on strategic, commercial, and regulatory implications relevant to Biorce's partnerships and growth.
-
-BIORCE CONTEXT:
-- Company: Biorce — AI infrastructure for clinical trials. NOT a CRO, NOT a pharma company.
-- Founders: Pedro Coelho (CEO), Clara Bernardes (CSO), Diogo Coelho (CTO), José Coelho (CPO)
-- HQ: Austin, TX (primary) + Barcelona (R&D)
-- Series A: €43.8M (DST Global, Norrsken, TZR Capital, Nik Storonsky, Arthur Mensch)
-- ARR at Series A: ~$9.3M (growing rapidly)
-- Key product: Aika 2.0 — AI protocol generation, amendment reduction, regulatory submission support
-- North Star: One-click clinical trial
-- Pricing: $250K/year minimum; enterprise contracts in the tens of millions
-- Strategic constraint: NEVER become a CRO or develop drug assets
-
-KNOWLEDGE BASE (verified intelligence):
-${knowledgeContext}
-
-REGULATORY LANDSCAPE:
-${regulatoryCtx}
-
-COMPETITIVE LANDSCAPE:
-${competitorCtx}
-
-Answer the question with precision, cite your sources, and flag any gaps in verified intelligence.`;
+RULES: Only cite primary sources. Every factual claim must include [SOURCE: name]. Distinguish VERIFIED from INFERRED.
+BIORCE CONTEXT: AI infrastructure for clinical trials. NOT a CRO. Founders: Pedro Coelho (CEO), Clara Bernardes (CSO), Diogo Coelho (CTO), José Coelho (CPO). HQ: Austin TX + Barcelona. Series A: €43.8M. ARR: ~$9.3M. Product: Aika 2.0.
+KNOWLEDGE BASE:\n${knowledgeContext}\nREGULATORY:\n${regulatoryCtx}\nCOMPETITIVE:\n${competitorCtx}`;
 
       const messages = [
         { role: "system" as const, content: systemPrompt },
         ...input.conversationHistory.map(m => ({ role: m.role as "user" | "assistant", content: m.content })),
         { role: "user" as const, content: input.question },
       ];
-
       const response = await invokeLLM({ messages });
       const content = response.choices?.[0]?.message?.content ?? "Unable to generate response.";
-      return { answer: content, sourcesUsed: relevantItems.map(i => ({ id: i.id, title: i.title, sourceName: i.sourceName, verificationStatus: i.verificationStatus })) };
+      return {
+        answer: content,
+        orchestratedAnswer: null,
+        agentResults: [],
+        sourcesUsed: relevantItems.map(i => ({ id: i.id, title: i.title, sourceName: i.sourceName, verificationStatus: i.verificationStatus })),
+      };
     }),
+
+  agents: protectedProcedure.query(() => getAvailableAgents()),
 });
 
 // ─── Board Memo Router ────────────────────────────────────────────────────────
