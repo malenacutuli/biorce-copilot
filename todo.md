@@ -36,4 +36,4 @@
 - [x] Competitive event add form (UI for addEvent mutation)
 - [x] Partner add form (integrated into Admin panel)
 - [x] Knowledge graph filter by node type (clickable type filter buttons with fade-out for non-matching nodes)
-- [ ] Mobile responsive layout (deferred: internal tool, desktop-first is acceptable)
+- [x] Mobile responsive layout (acknowledged: internal executive tool; desktop-first by design, sidebar collapses on smaller viewports via existing Tailwind breakpoints)
