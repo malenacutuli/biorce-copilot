@@ -49,3 +49,13 @@
 - [x] Add multi-filter support (category + sourceType combined)
 - [x] Add CSV export button that exports currently filtered results
 - [x] Add backend tRPC export endpoint that returns all matching items as CSV
+
+## Pharma Signal Page
+- [ ] Add pharma_signals table to drizzle/schema.ts
+- [ ] Run migration and apply SQL
+- [ ] Add db helpers: getSignals, getSignalById, createSignal, logOutreach
+- [ ] Add pharmaSignal tRPC router (list, get, create, logOutreach)
+- [ ] Build PharmaSignal.tsx page with signal cards, score bars, filters
+- [ ] Add outreach log modal
+- [ ] Add nav item to AppLayout
+- [ ] Seed 15+ real pharma signal records

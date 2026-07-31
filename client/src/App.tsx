@@ -16,6 +16,7 @@ import Copilot from "./pages/Copilot";
 import Login from "./pages/Login";
 import BoardMemo from "./pages/BoardMemo";
 import Admin from "./pages/Admin";
+import PharmaSignal from "./pages/PharmaSignal";
 
 function Router() {
   return (
@@ -32,6 +33,7 @@ function Router() {
       <Route path="/login" component={Login} />
       <Route path="/board-memo" component={BoardMemo} />
       <Route path="/admin" component={Admin} />
+      <Route path="/pharma-signal" component={PharmaSignal} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -24,6 +24,13 @@ import {
   regulatoryItems,
   users,
 } from "../drizzle/schema";
+import {
+  InsertPharmaSignal,
+  PharmaOutreachLog,
+  PharmaSignal,
+  pharmaOutreachLog,
+  pharmaSignals,
+} from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -314,4 +321,86 @@ export async function getGraphEdges() {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(graphEdges);
+}
+
+// ─── Pharma Signal Engine ─────────────────────────────────────────────────────
+
+export async function getPharmaSignals(opts?: {
+  status?: PharmaSignal["status"];
+  signalType?: PharmaSignal["signalType"];
+  companyType?: PharmaSignal["companyType"];
+  region?: PharmaSignal["region"];
+  limit?: number;
+  offset?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  const { eq, and, desc } = await import("drizzle-orm");
+  const conditions = [];
+  if (opts?.status) conditions.push(eq(pharmaSignals.status, opts.status));
+  if (opts?.signalType) conditions.push(eq(pharmaSignals.signalType, opts.signalType));
+  if (opts?.companyType) conditions.push(eq(pharmaSignals.companyType, opts.companyType));
+  if (opts?.region) conditions.push(eq(pharmaSignals.region, opts.region));
+  const query = db
+    .select()
+    .from(pharmaSignals)
+    .orderBy(desc(pharmaSignals.compositeScore))
+    .limit(opts?.limit ?? 100)
+    .offset(opts?.offset ?? 0);
+  if (conditions.length > 0) {
+    return query.where(and(...conditions));
+  }
+  return query;
+}
+
+export async function getPharmaSignalById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const { eq } = await import("drizzle-orm");
+  const rows = await db.select().from(pharmaSignals).where(eq(pharmaSignals.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function createPharmaSignal(data: Omit<InsertPharmaSignal, "id" | "createdAt" | "updatedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const composite = computeCompositeScore(
+    data.signalStrength ?? 5,
+    data.fitScore ?? 5,
+    data.urgencyScore ?? 5,
+    data.accessScore ?? 5,
+  );
+  await db.insert(pharmaSignals).values({ ...data, compositeScore: composite } as any);
+}
+
+export async function updatePharmaSignalStatus(id: number, status: PharmaSignal["status"]) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { eq } = await import("drizzle-orm");
+  await db.update(pharmaSignals).set({ status }).where(eq(pharmaSignals.id, id));
+}
+
+export async function updatePharmaSignalNotes(id: number, notes: string, biorceAngle?: string, proposedOutreach?: string) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { eq } = await import("drizzle-orm");
+  await db.update(pharmaSignals).set({ notes, biorceAngle, proposedOutreach }).where(eq(pharmaSignals.id, id));
+}
+
+export async function logPharmaOutreach(data: Omit<PharmaOutreachLog, "id" | "createdAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.insert(pharmaOutreachLog).values(data as any);
+}
+
+export async function getPharmaOutreachLog(signalId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const { eq, desc } = await import("drizzle-orm");
+  return db.select().from(pharmaOutreachLog).where(eq(pharmaOutreachLog.signalId, signalId)).orderBy(desc(pharmaOutreachLog.loggedAt));
+}
+
+function computeCompositeScore(strength: number, fit: number, urgency: number, access: number): number {
+  // Weighted: signal strength 35%, fit 35%, urgency 20%, access 10%
+  return Math.round((strength * 0.35 + fit * 0.35 + urgency * 0.2 + access * 0.1) * 10) / 10;
 }

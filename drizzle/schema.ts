@@ -196,3 +196,58 @@ export const graphEdges = mysqlTable("graph_edges", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type GraphEdge = typeof graphEdges.$inferSelect;
+
+// ─── Pharma Signal Engine ─────────────────────────────────────────────────────
+export const pharmaSignals = mysqlTable("pharma_signals", {
+  id: int("id").autoincrement().primaryKey(),
+  companyName: varchar("companyName", { length: 256 }).notNull(),
+  companySlug: varchar("companySlug", { length: 64 }).notNull(),
+  companyType: mysqlEnum("companyType", ["big_pharma", "mid_pharma", "biotech", "cro", "tech_pharma"]).notNull().default("big_pharma"),
+  region: mysqlEnum("region", ["US", "EU", "GLOBAL", "APAC"]).notNull().default("US"),
+  // Signal metadata
+  signalType: mysqlEnum("signalType", [
+    "executive_hire", "internal_build", "failed_internal", "conference_presentation",
+    "rfp_activity", "hiring_cluster", "partnership_gap", "regulatory_pressure", "funding_event",
+  ]).notNull(),
+  signalTitle: varchar("signalTitle", { length: 512 }).notNull(),
+  signalSummary: text("signalSummary").notNull(),
+  signalDate: timestamp("signalDate"),
+  sourceUrl: text("sourceUrl"),
+  sourceName: varchar("sourceName", { length: 256 }),
+  // Scoring (1-10 each)
+  signalStrength: int("signalStrength").notNull().default(5),   // How clear is the buying intent?
+  fitScore: int("fitScore").notNull().default(5),               // Does Biorce solve their stated problem?
+  urgencyScore: int("urgencyScore").notNull().default(5),       // Time sensitivity
+  accessScore: int("accessScore").notNull().default(5),         // Existing relationship / warm intro
+  // Computed (stored for sorting)
+  compositeScore: float("compositeScore").notNull().default(5.0),
+  // Status
+  status: mysqlEnum("status", ["new", "qualified", "in_outreach", "meeting_booked", "closed_won", "closed_lost", "watching"]).notNull().default("new"),
+  // Contact info
+  keyContact: varchar("keyContact", { length: 256 }),
+  keyContactTitle: varchar("keyContactTitle", { length: 256 }),
+  keyContactLinkedin: text("keyContactLinkedin"),
+  // BD notes
+  biorceAngle: text("biorceAngle"),
+  proposedOutreach: text("proposedOutreach"),
+  notes: text("notes"),
+  // Linked partner (if converted)
+  linkedPartnerId: int("linkedPartnerId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type PharmaSignal = typeof pharmaSignals.$inferSelect;
+export type InsertPharmaSignal = typeof pharmaSignals.$inferInsert;
+
+export const pharmaOutreachLog = mysqlTable("pharma_outreach_log", {
+  id: int("id").autoincrement().primaryKey(),
+  signalId: int("signalId").notNull(),
+  outreachType: mysqlEnum("outreachType", ["email", "linkedin", "call", "meeting", "conference", "intro", "follow_up"]).notNull(),
+  summary: text("summary").notNull(),
+  outcome: mysqlEnum("outcome", ["no_response", "positive", "negative", "meeting_booked", "referred", "not_ready"]),
+  nextStep: text("nextStep"),
+  loggedByUserId: int("loggedByUserId"),
+  loggedAt: timestamp("loggedAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type PharmaOutreachLog = typeof pharmaOutreachLog.$inferSelect;

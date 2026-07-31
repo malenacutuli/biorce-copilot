@@ -1,0 +1,42 @@
+CREATE TABLE `pharma_outreach_log` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`signalId` int NOT NULL,
+	`outreachType` enum('email','linkedin','call','meeting','conference','intro','follow_up') NOT NULL,
+	`summary` text NOT NULL,
+	`outcome` enum('no_response','positive','negative','meeting_booked','referred','not_ready'),
+	`nextStep` text,
+	`loggedByUserId` int,
+	`loggedAt` timestamp NOT NULL DEFAULT (now()),
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	CONSTRAINT `pharma_outreach_log_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `pharma_signals` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`companyName` varchar(256) NOT NULL,
+	`companySlug` varchar(64) NOT NULL,
+	`companyType` enum('big_pharma','mid_pharma','biotech','cro','tech_pharma') NOT NULL DEFAULT 'big_pharma',
+	`region` enum('US','EU','GLOBAL','APAC') NOT NULL DEFAULT 'US',
+	`signalType` enum('executive_hire','internal_build','failed_internal','conference_presentation','rfp_activity','hiring_cluster','partnership_gap','regulatory_pressure','funding_event') NOT NULL,
+	`signalTitle` varchar(512) NOT NULL,
+	`signalSummary` text NOT NULL,
+	`signalDate` timestamp,
+	`sourceUrl` text,
+	`sourceName` varchar(256),
+	`signalStrength` int NOT NULL DEFAULT 5,
+	`fitScore` int NOT NULL DEFAULT 5,
+	`urgencyScore` int NOT NULL DEFAULT 5,
+	`accessScore` int NOT NULL DEFAULT 5,
+	`compositeScore` float NOT NULL DEFAULT 5,
+	`status` enum('new','qualified','in_outreach','meeting_booked','closed_won','closed_lost','watching') NOT NULL DEFAULT 'new',
+	`keyContact` varchar(256),
+	`keyContactTitle` varchar(256),
+	`keyContactLinkedin` text,
+	`biorceAngle` text,
+	`proposedOutreach` text,
+	`notes` text,
+	`linkedPartnerId` int,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `pharma_signals_id` PRIMARY KEY(`id`)
+);

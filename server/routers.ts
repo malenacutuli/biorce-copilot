@@ -16,6 +16,11 @@ import {
   updatePartnerStage, upsertUser,
 } from "./db";
 import { exportKnowledgeItemsCsv } from "./db";
+import {
+  getPharmaSignals, getPharmaSignalById, createPharmaSignal,
+  updatePharmaSignalStatus, updatePharmaSignalNotes,
+  logPharmaOutreach, getPharmaOutreachLog,
+} from "./db";
 
 // ─── Knowledge Router ─────────────────────────────────────────────────────────
 const knowledgeRouter = router({
@@ -358,6 +363,97 @@ const boardMemoRouter = router({
 });
 
 // ─── App Router ───────────────────────────────────────────────────────────────
+// ─── Pharma Signal Router ─────────────────────────────────────────────────────
+const pharmaSignalRouter = router({
+  list: protectedProcedure
+    .input(z.object({
+      status: z.string().optional(),
+      signalType: z.string().optional(),
+      companyType: z.string().optional(),
+      region: z.string().optional(),
+      limit: z.number().min(1).max(200).default(100),
+      offset: z.number().min(0).default(0),
+    }))
+    .query(({ input }) => getPharmaSignals(input as any)),
+
+  get: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(({ input }) => getPharmaSignalById(input.id)),
+
+  create: protectedProcedure
+    .input(z.object({
+      companyName: z.string().min(1),
+      companySlug: z.string().min(1),
+      companyType: z.enum(["big_pharma", "mid_pharma", "biotech", "cro", "tech_pharma"]).default("big_pharma"),
+      region: z.enum(["US", "EU", "GLOBAL", "APAC"]).default("US"),
+      signalType: z.enum([
+        "executive_hire", "internal_build", "failed_internal", "conference_presentation",
+        "rfp_activity", "hiring_cluster", "partnership_gap", "regulatory_pressure", "funding_event",
+      ]),
+      signalTitle: z.string().min(1),
+      signalSummary: z.string().min(1),
+      signalDate: z.string().optional(),
+      sourceUrl: z.string().optional(),
+      sourceName: z.string().optional(),
+      signalStrength: z.number().min(1).max(10).default(5),
+      fitScore: z.number().min(1).max(10).default(5),
+      urgencyScore: z.number().min(1).max(10).default(5),
+      accessScore: z.number().min(1).max(10).default(5),
+      keyContact: z.string().optional(),
+      keyContactTitle: z.string().optional(),
+      biorceAngle: z.string().optional(),
+      proposedOutreach: z.string().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const data: any = { ...input };
+      if (input.signalDate) data.signalDate = new Date(input.signalDate);
+      await createPharmaSignal(data);
+      return { success: true };
+    }),
+
+  updateStatus: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      status: z.enum(["new", "qualified", "in_outreach", "meeting_booked", "closed_won", "closed_lost", "watching"]),
+    }))
+    .mutation(({ input }) => updatePharmaSignalStatus(input.id, input.status)),
+
+  updateNotes: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      notes: z.string(),
+      biorceAngle: z.string().optional(),
+      proposedOutreach: z.string().optional(),
+    }))
+    .mutation(({ input }) => updatePharmaSignalNotes(input.id, input.notes, input.biorceAngle, input.proposedOutreach)),
+
+  logOutreach: protectedProcedure
+    .input(z.object({
+      signalId: z.number(),
+      outreachType: z.enum(["email", "linkedin", "call", "meeting", "conference", "intro", "follow_up"]),
+      summary: z.string().min(1),
+      outcome: z.enum(["no_response", "positive", "negative", "meeting_booked", "referred", "not_ready"]).optional(),
+      nextStep: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      await logPharmaOutreach({
+        signalId: input.signalId,
+        outreachType: input.outreachType,
+        summary: input.summary,
+        outcome: input.outcome ?? null,
+        nextStep: input.nextStep ?? null,
+        loggedByUserId: ctx.user?.id ?? null,
+        loggedAt: new Date(),
+      });
+      return { success: true };
+    }),
+
+  getOutreachLog: protectedProcedure
+    .input(z.object({ signalId: z.number() }))
+    .query(({ input }) => getPharmaOutreachLog(input.signalId)),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -378,6 +474,7 @@ export const appRouter = router({
   dashboard: dashboardRouter,
   copilot: copilotRouter,
   boardMemo: boardMemoRouter,
+  pharmaSignal: pharmaSignalRouter,
 });
 
 export type AppRouter = typeof appRouter;
