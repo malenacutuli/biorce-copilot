@@ -15,6 +15,7 @@ import KnowledgeGraph from "./pages/KnowledgeGraph";
 import Copilot from "./pages/Copilot";
 import Login from "./pages/Login";
 import BoardMemo from "./pages/BoardMemo";
+import Admin from "./pages/Admin";
 
 function Router() {
   return (
@@ -30,6 +31,7 @@ function Router() {
       <Route path="/copilot" component={Copilot} />
       <Route path="/login" component={Login} />
       <Route path="/board-memo" component={BoardMemo} />
+      <Route path="/admin" component={Admin} />
       <Route component={NotFound} />
     </Switch>
   );

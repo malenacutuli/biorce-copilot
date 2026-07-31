@@ -5,10 +5,10 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { invokeLLM } from "./_core/llm";
-import {
+  import {
   countKnowledgeItems, countOpenDiscrepancies, countUnreadAlerts,
   countPartnersByStage, createAlert, createCiEvent, createKnowledgeItem,
-  createRegulatoryItem, getAlerts, getCiEvents, getCompetitors,
+  createPartner, createRegulatoryItem, getAlerts, getCiEvents, getCompetitors,
   getDiscrepancies, getGraphEdges, getGraphNodes, getKnowledgeItemById,
   getKnowledgeItems, getPartnerById, getPartnerExecutives, getPartners,
   getRegulatoryItems, getUserByOpenId, markAlertRead, updateDiscrepancyStatus,
@@ -36,6 +36,36 @@ const knowledgeRouter = router({
     }),
 
   count: protectedProcedure.query(() => countKnowledgeItems()),
+
+  create: protectedProcedure
+    .input(z.object({
+      title: z.string().min(1).max(500),
+      category: z.enum(["podcast", "press_release", "regulatory", "competitor", "internal", "investor", "public_statement", "research"]),
+      content: z.string().min(1),
+      summary: z.string().optional(),
+      sourceName: z.string().optional(),
+      sourceUrl: z.string().optional(),
+      verificationStatus: z.enum(["verified", "inferred", "unverified"]).default("unverified"),
+      tags: z.array(z.string()).default([]),
+    }))
+    .mutation(async ({ input }) => {
+        const item = await createKnowledgeItem({
+          title: input.title,
+          category: input.category,
+          content: input.content,
+          summary: input.summary ?? null,
+          sourceName: input.sourceName ?? null,
+          sourceUrl: input.sourceUrl ?? null,
+          verificationStatus: input.verificationStatus,
+          tags: input.tags,
+          publishedAt: new Date(),
+          sourceType: "primary",
+          author: null,
+          entities: [],
+          isConfidential: false,
+        });
+      return item;
+    }),
 });
 
 // ─── Regulatory Router ────────────────────────────────────────────────────────
@@ -110,6 +140,37 @@ const partnershipRouter = router({
     }),
 
   stageStats: protectedProcedure.query(() => countPartnersByStage()),
+
+  create: protectedProcedure
+    .input(z.object({
+      name: z.string().min(1).max(256),
+      type: z.enum(["pharma", "cro", "tech", "hospital", "regulator", "investor", "standards_body", "lobby"]),
+      tier: z.enum(["P0", "P1", "P2", "P3"]).default("P2"),
+      stage: z.enum(["identified", "researching", "outreach", "intro_meeting", "negotiating", "loi_signed", "active", "closed_won", "closed_lost", "on_hold"]).default("identified"),
+      region: z.enum(["US", "EU", "GLOBAL"]).default("US"),
+      website: z.string().optional(),
+      description: z.string().optional(),
+      nextAction: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      await createPartner({
+        name: input.name,
+        type: input.type,
+        tier: input.tier,
+        stage: input.stage,
+        region: input.region,
+        website: input.website ?? null,
+        description: input.description ?? null,
+        nextAction: input.nextAction ?? null,
+        mutualValue: null,
+        dealEconomics: null,
+        killCriteria: null,
+        nextActionDate: null,
+        estimatedArrImpact: null,
+        notes: null,
+      });
+      return { success: true };
+    }),
 });
 
 // ─── Discrepancy Router ───────────────────────────────────────────────────────

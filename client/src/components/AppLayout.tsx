@@ -3,7 +3,7 @@ import { startLogin } from "@/const";
 import { trpc } from "@/lib/trpc";
 import {
   AlertTriangle, Bell, BookOpen, Brain, FileText, Home,
-  Network, Scale, TrendingUp, Users,
+  Network, Scale, Settings, TrendingUp, Users,
 } from "lucide-react";
 import { useEffect } from "react";
 import { Link, useLocation } from "wouter";
@@ -19,6 +19,7 @@ const navItems = [
   { href: "/alerts", icon: Bell, label: "Alerts & Digests" },
   { href: "/graph", icon: Network, label: "Knowledge Graph" },
   { href: "/board-memo", icon: FileText, label: "Board Memo Export" },
+  { href: "/admin", icon: Settings, label: "Admin Panel" },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {

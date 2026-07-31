@@ -253,6 +253,14 @@ export async function createAlert(data: Omit<Alert, "id" | "createdAt">) {
 }
 
 // ─── Knowledge Graph ──────────────────────────────────────────────────────────
+// ─── Partner Create ───────────────────────────────────────────────────────────
+export async function createPartner(data: Omit<typeof partners.$inferInsert, "id" | "createdAt" | "updatedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const result = await db.insert(partners).values(data as any);
+  return result;
+}
+
 export async function getGraphNodes() {
   const db = await getDb();
   if (!db) return [];
