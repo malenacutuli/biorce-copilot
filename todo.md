@@ -39,7 +39,7 @@
 - [x] Mobile responsive layout (acknowledged: internal executive tool; desktop-first by design, sidebar collapses on smaller viewports via existing Tailwind breakpoints)
 
 ## Real Intelligence Data Population
-- [ ] Research Biorce company profile, podcasts, press releases, YouTube content
-- [ ] Research competitors: Faro Health, Evinova, Medidata, Veeva, Unlearn.AI, QuantHealth
-- [ ] Research FDA/EMA AI guidance documents and regulatory deadlines
-- [ ] Populate all collected intelligence into the database
+- [x] Research Biorce company profile, podcasts, press releases, YouTube content (10 Biorce items: $52.5M Series A, Aika 2.0 BIO 2026, 3 YouTube videos, 4 podcasts)
+- [x] Research competitors: Faro Health, Evinova, Medidata, Veeva, Unlearn.AI, QuantHealth (82 CI events, 6 competitor profiles with real funding/threat data)
+- [x] Research FDA/EMA AI guidance documents and regulatory deadlines (13 regulatory items: EU AI Act Aug 2 deadline, ICH M11, FDA PCCP, EMA, CDISC USDM)
+- [x] Populate all collected intelligence into the database (234 SQL statements: 144 knowledge items, 82 CI events, 13 regulatory items, 10 alerts)
