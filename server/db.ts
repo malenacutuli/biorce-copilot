@@ -70,13 +70,14 @@ export async function getUserByOpenId(openId: string) {
 
 // ─── Knowledge Base ───────────────────────────────────────────────────────────
 export async function getKnowledgeItems(opts: {
-  category?: string; search?: string; verificationStatus?: string; limit?: number; offset?: number;
+  category?: string; search?: string; verificationStatus?: string; sourceType?: string; limit?: number; offset?: number;
 }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
   if (opts.category) conditions.push(eq(knowledgeItems.category, opts.category as KnowledgeItem["category"]));
   if (opts.verificationStatus) conditions.push(eq(knowledgeItems.verificationStatus, opts.verificationStatus as KnowledgeItem["verificationStatus"]));
+  if (opts.sourceType) conditions.push(eq(knowledgeItems.sourceType, opts.sourceType as KnowledgeItem["sourceType"]));
   if (opts.search) conditions.push(or(like(knowledgeItems.title, `%${opts.search}%`), like(knowledgeItems.content, `%${opts.search}%`)));
   const query = db.select().from(knowledgeItems);
   if (conditions.length > 0) query.where(and(...conditions));
@@ -101,6 +102,48 @@ export async function countKnowledgeItems() {
   if (!db) return 0;
   const result = await db.select({ count: sql<number>`count(*)` }).from(knowledgeItems);
   return Number(result[0]?.count ?? 0);
+}
+
+export async function exportKnowledgeItemsCsv(opts: {
+  category?: string; search?: string; verificationStatus?: string; sourceType?: string;
+}) {
+  const db = await getDb();
+  if (!db) return "";
+  const conditions = [];
+  if (opts.category) conditions.push(eq(knowledgeItems.category, opts.category as KnowledgeItem["category"]));
+  if (opts.verificationStatus) conditions.push(eq(knowledgeItems.verificationStatus, opts.verificationStatus as KnowledgeItem["verificationStatus"]));
+  if (opts.sourceType) conditions.push(eq(knowledgeItems.sourceType, opts.sourceType as KnowledgeItem["sourceType"]));
+  if (opts.search) conditions.push(or(like(knowledgeItems.title, `%${opts.search}%`), like(knowledgeItems.content, `%${opts.search}%`)));
+  const query = db.select({
+    id: knowledgeItems.id,
+    title: knowledgeItems.title,
+    category: knowledgeItems.category,
+    sourceType: knowledgeItems.sourceType,
+    verificationStatus: knowledgeItems.verificationStatus,
+    sourceName: knowledgeItems.sourceName,
+    author: knowledgeItems.author,
+    sourceUrl: knowledgeItems.sourceUrl,
+    publishedAt: knowledgeItems.publishedAt,
+    summary: knowledgeItems.summary,
+    tags: knowledgeItems.tags,
+    createdAt: knowledgeItems.createdAt,
+  }).from(knowledgeItems);
+  if (conditions.length > 0) query.where(and(...conditions));
+  const rows = await query.orderBy(desc(knowledgeItems.createdAt)).limit(2000);
+  const escape = (v: unknown): string => {
+    if (v == null) return '""';
+    const s = Array.isArray(v) ? v.join("; ") : String(v);
+    return `"${s.replace(/"/g, '""')}"`;
+  };
+  const header = ["id","title","category","sourceType","verificationStatus","sourceName","author","sourceUrl","publishedAt","summary","tags","createdAt"];
+  const lines = [header.join(","), ...rows.map(r => [
+    r.id, r.title, r.category, r.sourceType, r.verificationStatus,
+    r.sourceName, r.author, r.sourceUrl,
+    r.publishedAt ? new Date(r.publishedAt as Date).toISOString() : null,
+    r.summary, r.tags,
+    r.createdAt ? new Date(r.createdAt as Date).toISOString() : null,
+  ].map(escape).join(","))];
+  return lines.join("\r\n");
 }
 
 // ─── Regulatory Tracker ───────────────────────────────────────────────────────

@@ -43,3 +43,9 @@
 - [x] Research competitors: Faro Health, Evinova, Medidata, Veeva, Unlearn.AI, QuantHealth (82 CI events, 6 competitor profiles with real funding/threat data)
 - [x] Research FDA/EMA AI guidance documents and regulatory deadlines (13 regulatory items: EU AI Act Aug 2 deadline, ICH M11, FDA PCCP, EMA, CDISC USDM)
 - [x] Populate all collected intelligence into the database (234 SQL statements: 144 knowledge items, 82 CI events, 13 regulatory items, 10 alerts)
+
+## Knowledge Base Filtering & Export
+- [x] Add sourceType filter buttons to Knowledge Base page (primary, secondary, podcast, video, internal)
+- [x] Add multi-filter support (category + sourceType combined)
+- [x] Add CSV export button that exports currently filtered results
+- [x] Add backend tRPC export endpoint that returns all matching items as CSV

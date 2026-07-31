@@ -14,6 +14,7 @@ import { invokeLLM } from "./_core/llm";
   getRegulatoryItems, getUserByOpenId, markAlertRead, updateDiscrepancyStatus,
   updatePartnerStage, upsertUser,
 } from "./db";
+import { exportKnowledgeItemsCsv } from "./db";
 
 // ─── Knowledge Router ─────────────────────────────────────────────────────────
 const knowledgeRouter = router({
@@ -26,6 +27,15 @@ const knowledgeRouter = router({
       offset: z.number().min(0).default(0),
     }))
     .query(({ input }) => getKnowledgeItems(input)),
+
+  exportCsv: protectedProcedure
+    .input(z.object({
+      category: z.string().optional(),
+      search: z.string().optional(),
+      verificationStatus: z.string().optional(),
+      sourceType: z.string().optional(),
+    }))
+    .query(({ input }) => exportKnowledgeItemsCsv(input)),
 
   byId: protectedProcedure
     .input(z.object({ id: z.number() }))
