@@ -31,7 +31,7 @@
 - [x] PDF Export board memo functionality (Board Memo page with AI generation + browser print)
 
 ## Future Enhancements
-- [ ] Weekly digest email automation (deferred: requires heartbeat scheduler setup)
+- [x] Weekly digest email automation (POST /api/scheduled/weekly-digest handler + Heartbeat cron ready; activate after deploy)
 - [x] Admin panel for adding knowledge items and logging competitive events via UI
 - [x] Competitive event add form (UI for addEvent mutation)
 - [x] Partner add form (integrated into Admin panel)
