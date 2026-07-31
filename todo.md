@@ -37,3 +37,9 @@
 - [x] Partner add form (integrated into Admin panel)
 - [x] Knowledge graph filter by node type (clickable type filter buttons with fade-out for non-matching nodes)
 - [x] Mobile responsive layout (acknowledged: internal executive tool; desktop-first by design, sidebar collapses on smaller viewports via existing Tailwind breakpoints)
+
+## Real Intelligence Data Population
+- [ ] Research Biorce company profile, podcasts, press releases, YouTube content
+- [ ] Research competitors: Faro Health, Evinova, Medidata, Veeva, Unlearn.AI, QuantHealth
+- [ ] Research FDA/EMA AI guidance documents and regulatory deadlines
+- [ ] Populate all collected intelligence into the database
