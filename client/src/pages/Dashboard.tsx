@@ -1,5 +1,6 @@
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { AlertTriangle, Bell, BookOpen, Brain, Clock, TrendingUp, Users, Zap } from "lucide-react";
 import { Link } from "wouter";
 
@@ -22,10 +23,11 @@ function KpiCard({ title, value, subtitle, icon: Icon, color, href }: { title: s
 }
 
 export default function Dashboard() {
-  const { data: kpis, isLoading } = trpc.dashboard.kpis.useQuery();
-  const { data: alerts } = trpc.alerts.list.useQuery({ isRead: false, limit: 5 });
-  const { data: discrepancies } = trpc.discrepancies.list.useQuery({ status: "open", limit: 5 });
-  const { data: regulatoryItems } = trpc.regulatory.list.useQuery({ status: "active", impactLevel: "critical", limit: 3 });
+  const { isAuthenticated } = useAuth();
+  const { data: kpis, isLoading } = trpc.dashboard.kpis.useQuery(undefined, { enabled: isAuthenticated });
+  const { data: alerts } = trpc.alerts.list.useQuery({ isRead: false, limit: 5 }, { enabled: isAuthenticated });
+  const { data: discrepancies } = trpc.discrepancies.list.useQuery({ status: "open", limit: 5 }, { enabled: isAuthenticated });
+  const { data: regulatoryItems } = trpc.regulatory.list.useQuery({ status: "active", impactLevel: "critical", limit: 3 }, { enabled: isAuthenticated });
 
   return (
     <AppLayout>
@@ -128,4 +130,3 @@ export default function Dashboard() {
     </AppLayout>
   );
 }
-

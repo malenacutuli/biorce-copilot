@@ -8,7 +8,20 @@ import App from "./App";
 import { startLogin } from "./const";
 import "./index.css";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Don't retry on network errors — the server is available but the user
+      // may not be authenticated yet. Retrying floods the console with errors.
+      retry: (failureCount, error) => {
+        if (error instanceof TRPCClientError) return false;
+        return failureCount < 1;
+      },
+      // Don't refetch in the background — reduces noise during auth transitions
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
