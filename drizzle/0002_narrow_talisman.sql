@@ -1,0 +1,1 @@
+ALTER TABLE `graph_nodes` MODIFY COLUMN `metadata` json;
