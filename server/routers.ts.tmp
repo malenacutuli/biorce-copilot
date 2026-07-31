@@ -1,0 +1,33 @@
+
+// ─── Board Memo Router ────────────────────────────────────────────────────────
+const boardMemoRouter = router({
+  generate: protectedProcedure
+    .input(z.object({
+      sections: z.array(z.string()).default(["executive_summary", "regulatory", "competitive", "partnerships", "discrepancies", "recommendations"]),
+    }))
+    .mutation(async () => {
+      const [knowledge, regulatory, competitors, partners, discrepancies] = await Promise.all([
+        getKnowledgeItems({ limit: 20 }),
+        getRegulatoryItems({ limit: 10 }),
+        getCompetitors(),
+        getPartners({ limit: 20 }),
+        getDiscrepancies({ limit: 10 }),
+      ]);
+
+      const today = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+      const systemPrompt = `You are the Biorce Strategy Copilot generating a board-level intelligence memo. Format the output as clean HTML suitable for printing to PDF. Use professional executive language. Structure: h1 for title, h2 for sections, p for paragraphs, ul/li for bullets. Include today's date: ${today}. Every factual claim must cite its source in brackets [SOURCE].`;
+
+      const regLines = regulatory.map(r => `- ${r.title} [${r.body}] — ${r.status} — Deadline: ${r.deadline ? new Date(r.deadline).toLocaleDateString() : "TBD"}`).join("\n");
+      const compLines = competitors.map(c => `- ${c.name} [${c.threatLevel} threat] — ${(c.description ?? "").slice(0, 100)}`).join("\n");
+      const partLines = partners.slice(0, 10).map(p => `- ${p.name} [${p.tier}/${p.stage}] — ${p.type}`).join("\n");
+      const discLines = discrepancies.filter(d => d.status === "open").map(d => `- [${d.severity.toUpperCase()}] ${d.title}`).join("\n");
+      const knowledgeTitles = knowledge.slice(0, 5).map(k => k.title).join("; ");
+
+      const userPrompt = `Generate a comprehensive board intelligence memo for Biorce covering:\n\n1. EXECUTIVE SUMMARY — Current strategic position, key wins, critical risks\n2. REGULATORY LANDSCAPE — Active deadlines and compliance requirements:\n${regLines}\n3. COMPETITIVE INTELLIGENCE — Threat assessment:\n${compLines}\n4. PARTNERSHIP PIPELINE — Active and priority targets:\n${partLines}\n5. OPEN DISCREPANCIES — Flags requiring board attention:\n${discLines}\n6. STRATEGIC RECOMMENDATIONS — Top 3 actions for next 30 days\n\nKnowledge context: ${knowledgeTitles}`;
+
+      const response = await invokeLLM({ messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }] });
+      const html = response.choices?.[0]?.message?.content ?? "<p>Unable to generate memo.</p>";
+      return { html, generatedAt: new Date().toISOString() };
+    }),
+});
+

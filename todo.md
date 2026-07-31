@@ -10,7 +10,7 @@
 - [x] tRPC routers: knowledge, regulatory, competitive, partnerships, discrepancies, alerts, copilot
 - [x] AI copilot endpoint with source citation enforcement
 - [x] Seed all Biorce intelligence data (podcasts, press, FDA, competitors, partners, graph)
-- [ ] PDF export endpoint for board memos
+- [x] PDF export endpoint for board memos (AI-generated board memo with print-to-PDF)
 
 ## Frontend — Core Layout
 - [x] Dark executive theme in index.css (deep navy/slate palette, Inter font, OKLCH colors)
@@ -28,12 +28,12 @@
 - [x] AI Copilot chat (source citations, suggested questions, primary-sources-only badge)
 - [x] Alerts & Digest page (grouped by type, mark-read, mark-all-read)
 - [x] Knowledge Graph visualization (interactive SVG, draggable nodes, verified/inferred edges)
-- [ ] PDF Export board memo functionality
+- [x] PDF Export board memo functionality (Board Memo page with AI generation + browser print)
 
 ## Future Enhancements
 - [ ] Weekly digest email automation (heartbeat scheduled job)
-- [ ] Admin panel for adding/editing knowledge items
-- [ ] Competitive event add form
+- [ ] Admin panel for adding/editing knowledge items via UI
+- [ ] Competitive event add form (UI for addEvent mutation)
 - [ ] Partner add/edit form
 - [ ] Knowledge graph filter by node type
 - [ ] Mobile responsive layout

@@ -2,8 +2,8 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { startLogin } from "@/const";
 import { trpc } from "@/lib/trpc";
 import {
-  AlertTriangle, Bell, BookOpen, Brain, Home,
-  Network, Scale, TrendingUp, Users, GitBranch,
+  AlertTriangle, Bell, BookOpen, Brain, FileText, Home,
+  Network, Scale, TrendingUp, Users,
 } from "lucide-react";
 import { useEffect } from "react";
 import { Link, useLocation } from "wouter";
@@ -18,7 +18,7 @@ const navItems = [
   { href: "/discrepancies", icon: AlertTriangle, label: "Discrepancy Detector" },
   { href: "/alerts", icon: Bell, label: "Alerts & Digests" },
   { href: "/graph", icon: Network, label: "Knowledge Graph" },
-  { href: "/graph", icon: GitBranch, label: "Relationship Map" },
+  { href: "/board-memo", icon: FileText, label: "Board Memo Export" },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
