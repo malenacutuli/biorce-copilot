@@ -15,6 +15,7 @@ export default function KnowledgeGraph() {
   const { data: nodes } = trpc.graph.nodes.useQuery();
   const { data: edges } = trpc.graph.edges.useQuery();
   const [selected, setSelected] = useState<any>(null);
+  const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const [positions, setPositions] = useState<Record<number, { x: number; y: number }>>({});
   const svgRef = useRef<SVGSVGElement>(null);
   const [dragging, setDragging] = useState<number | null>(null);
@@ -45,11 +46,15 @@ export default function KnowledgeGraph() {
     }
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
+    const handleMouseMove = (e: React.MouseEvent) => {
     if (dragging == null) return;
     const rect = svgRef.current?.getBoundingClientRect();
     if (rect) setPositions(p => ({ ...p, [dragging]: { x: e.clientX - rect.left - offset.x, y: e.clientY - rect.top - offset.y } }));
   };
+
+  const filteredNodes = activeFilter ? nodes?.filter((n: any) => n.type === activeFilter) : nodes;
+  const filteredNodeIds = new Set(filteredNodes?.map((n: any) => n.id) ?? []);
+  const filteredEdges = activeFilter ? edges?.filter((e: any) => filteredNodeIds.has(e.sourceId) && filteredNodeIds.has(e.targetId)) : edges;
 
   return (
     <AppLayout>
@@ -59,12 +64,19 @@ export default function KnowledgeGraph() {
             <h1 className="text-base font-semibold" style={{ color: "var(--color-foreground)" }}>Knowledge Graph</h1>
             <p className="text-xs mt-0.5" style={{ color: "var(--color-muted-foreground)" }}>Interactive relationship map — drag nodes to explore. Green = verified, amber = inferred.</p>
           </div>
-          <div className="flex gap-3">
+        <div className="flex gap-3">
+            <button onClick={() => setActiveFilter(null)}
+              className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+              style={{ background: activeFilter === null ? "var(--color-primary)" : "var(--color-accent)", color: activeFilter === null ? "var(--color-primary-foreground)" : "var(--color-muted-foreground)" }}>
+              All
+            </button>
             {Object.entries(NODE_COLORS).map(([type, color]) => (
-              <div key={type} className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
-                <span className="text-xs" style={{ color: "var(--color-muted-foreground)" }}>{type}</span>
-              </div>
+              <button key={type} onClick={() => setActiveFilter(activeFilter === type ? null : type)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+                style={{ background: activeFilter === type ? `${color}33` : "var(--color-accent)", color: activeFilter === type ? color : "var(--color-muted-foreground)", border: activeFilter === type ? `1px solid ${color}66` : "1px solid transparent" }}>
+                <div className="w-2 h-2 rounded-full" style={{ background: color }} />
+                {type}
+              </button>
             ))}
           </div>
         </div>
@@ -80,7 +92,7 @@ export default function KnowledgeGraph() {
               </marker>
             </defs>
             {/* Edges */}
-            {edges?.map((e: any) => {
+            {filteredEdges?.map((e: any) => {
               const s = positions[e.sourceId], t = positions[e.targetId];
               if (!s || !t) return null;
               const isVerified = e.verificationStatus === "verified";
@@ -96,7 +108,7 @@ export default function KnowledgeGraph() {
               );
             })}
             {/* Nodes */}
-            {nodes?.map((n: any) => {
+            {filteredNodes?.map((n: any) => {
               const pos = positions[n.id];
               if (!pos) return null;
               const isBiorce = n.label === "Biorce";
@@ -106,7 +118,7 @@ export default function KnowledgeGraph() {
                 <g key={n.id} transform={`translate(${pos.x},${pos.y})`}
                   onMouseDown={e => handleMouseDown(e, n.id)}
                   onClick={() => setSelected(n)}
-                  style={{ cursor: "grab" }}>
+                  style={{ cursor: "grab", opacity: activeFilter && n.type !== activeFilter ? 0.2 : 1, transition: "opacity 200ms" }}>
                   <circle r={r} fill={`${color}22`} stroke={color} strokeWidth={isBiorce ? 2.5 : 1.5} />
                   {isBiorce && <circle r={r + 6} fill="none" stroke={color} strokeWidth={0.5} opacity={0.4} />}
                   <text textAnchor="middle" y={r + 12} fontSize={isBiorce ? 11 : 9} fontWeight={isBiorce ? "600" : "400"} fill="oklch(0.85 0.005 240)">{n.label}</text>
@@ -130,4 +142,3 @@ export default function KnowledgeGraph() {
     </AppLayout>
   );
 }
-

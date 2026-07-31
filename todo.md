@@ -31,9 +31,9 @@
 - [x] PDF Export board memo functionality (Board Memo page with AI generation + browser print)
 
 ## Future Enhancements
-- [ ] Weekly digest email automation (future: heartbeat scheduled job)
+- [ ] Weekly digest email automation (deferred: requires heartbeat scheduler setup)
 - [x] Admin panel for adding knowledge items and logging competitive events via UI
 - [x] Competitive event add form (UI for addEvent mutation)
 - [x] Partner add form (integrated into Admin panel)
-- [ ] Knowledge graph filter by node type (future: graph UX enhancement)
-- [ ] Mobile responsive layout (future: responsive breakpoints)
+- [x] Knowledge graph filter by node type (clickable type filter buttons with fade-out for non-matching nodes)
+- [ ] Mobile responsive layout (deferred: internal tool, desktop-first is acceptable)
