@@ -251,3 +251,155 @@ export const pharmaOutreachLog = mysqlTable("pharma_outreach_log", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type PharmaOutreachLog = typeof pharmaOutreachLog.$inferSelect;
+
+// ─── Media Library ────────────────────────────────────────────────────────────
+export const mediaItems = mysqlTable("media_items", {
+  id: int("id").autoincrement().primaryKey(),
+  title: varchar("title", { length: 512 }).notNull(),
+  description: text("description"),
+  mediaType: mysqlEnum("mediaType", ["video", "audio", "document", "image", "transcript"]).notNull(),
+  // Storage
+  fileKey: varchar("fileKey", { length: 512 }),       // S3 key
+  fileUrl: text("fileUrl"),                            // S3 URL or external URL
+  externalUrl: text("externalUrl"),                   // YouTube / external link
+  thumbnailUrl: text("thumbnailUrl"),
+  fileSizeBytes: int("fileSizeBytes"),
+  durationSeconds: int("durationSeconds"),
+  mimeType: varchar("mimeType", { length: 128 }),
+  // Metadata
+  source: varchar("source", { length: 256 }),         // e.g. "Itnig Podcast", "YouTube"
+  speakers: json("speakers").$type<string[]>().default([]),
+  language: varchar("language", { length: 16 }).default("en"),
+  publishedAt: timestamp("publishedAt"),
+  tags: json("tags").$type<string[]>().default([]),
+  // Classification
+  verificationStatus: mysqlEnum("verificationStatus", ["verified", "inferred", "unverified"]).notNull().default("verified"),
+  sourceOfTruth: mysqlEnum("sourceOfTruth", ["primary", "secondary", "inferred"]).notNull().default("primary"),
+  // Linked knowledge item (if transcript was loaded)
+  linkedKnowledgeItemId: int("linkedKnowledgeItemId"),
+  // Transcript text (stored inline for search)
+  transcriptText: text("transcriptText"),
+  isPublic: boolean("isPublic").default(true).notNull(),
+  uploadedByUserId: int("uploadedByUserId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type MediaItem = typeof mediaItems.$inferSelect;
+export type InsertMediaItem = typeof mediaItems.$inferInsert;
+
+// ─── Press Room ───────────────────────────────────────────────────────────────
+export const pressItems = mysqlTable("press_items", {
+  id: int("id").autoincrement().primaryKey(),
+  title: varchar("title", { length: 512 }).notNull(),
+  outlet: varchar("outlet", { length: 256 }),
+  author: varchar("author", { length: 256 }),
+  summary: text("summary"),
+  fullContent: text("fullContent"),
+  sourceUrl: text("sourceUrl").notNull(),
+  publishedAt: timestamp("publishedAt"),
+  pressType: mysqlEnum("pressType", ["press_release", "news_mention", "interview", "feature", "op_ed", "podcast_mention"]).notNull().default("news_mention"),
+  sentiment: mysqlEnum("sentiment", ["positive", "neutral", "negative", "mixed"]).default("neutral"),
+  verificationStatus: mysqlEnum("verificationStatus", ["verified", "inferred", "unverified"]).notNull().default("verified"),
+  sourceOfTruth: mysqlEnum("sourceOfTruth", ["primary", "secondary", "inferred"]).notNull().default("secondary"),
+  tags: json("tags").$type<string[]>().default([]),
+  entities: json("entities").$type<string[]>().default([]),
+  // Discrepancy link
+  hasDiscrepancy: boolean("hasDiscrepancy").default(false).notNull(),
+  discrepancyNote: text("discrepancyNote"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type PressItem = typeof pressItems.$inferSelect;
+export type InsertPressItem = typeof pressItems.$inferInsert;
+
+// ─── Source Comments (rectify / add facts on any record) ─────────────────────
+export const sourceComments = mysqlTable("source_comments", {
+  id: int("id").autoincrement().primaryKey(),
+  // Polymorphic ref
+  targetTable: varchar("targetTable", { length: 64 }).notNull(), // "knowledge_items" | "media_items" | "press_items" | "discrepancies" | "partners" | ...
+  targetId: int("targetId").notNull(),
+  // Content
+  commentType: mysqlEnum("commentType", ["correction", "addition", "question", "note", "verified_by"]).notNull().default("note"),
+  body: text("body").notNull(),
+  newFactClaim: text("newFactClaim"),         // optional structured fact to add
+  sourceUrl: text("sourceUrl"),               // supporting source for the comment
+  // Status
+  status: mysqlEnum("status", ["open", "accepted", "rejected", "pending_review"]).notNull().default("open"),
+  resolvedAt: timestamp("resolvedAt"),
+  resolvedByUserId: int("resolvedByUserId"),
+  authorUserId: int("authorUserId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type SourceComment = typeof sourceComments.$inferSelect;
+export type InsertSourceComment = typeof sourceComments.$inferInsert;
+
+// ─── Partner CRM Activity Log ─────────────────────────────────────────────────
+export const partnerActivities = mysqlTable("partner_activities", {
+  id: int("id").autoincrement().primaryKey(),
+  partnerId: int("partnerId").notNull(),
+  activityType: mysqlEnum("activityType", [
+    "email", "call", "meeting", "linkedin", "conference", "intro", "follow_up",
+    "proposal_sent", "loi_signed", "contract_signed", "demo", "note",
+  ]).notNull(),
+  title: varchar("title", { length: 512 }).notNull(),
+  body: text("body"),
+  outcome: mysqlEnum("outcome", ["pending", "positive", "negative", "no_response", "meeting_booked", "referred"]).default("pending"),
+  nextStep: text("nextStep"),
+  nextStepDate: timestamp("nextStepDate"),
+  // Interconnectivity: link to other sources
+  linkedKnowledgeItemId: int("linkedKnowledgeItemId"),
+  linkedPressItemId: int("linkedPressItemId"),
+  linkedSignalId: int("linkedSignalId"),
+  attachmentUrl: text("attachmentUrl"),
+  loggedByUserId: int("loggedByUserId"),
+  loggedAt: timestamp("loggedAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type PartnerActivity = typeof partnerActivities.$inferSelect;
+export type InsertPartnerActivity = typeof partnerActivities.$inferInsert;
+
+// ─── Partner Flags ────────────────────────────────────────────────────────────
+export const partnerFlags = mysqlTable("partner_flags", {
+  id: int("id").autoincrement().primaryKey(),
+  partnerId: int("partnerId").notNull(),
+  flagType: mysqlEnum("flagType", [
+    "risk", "opportunity", "blocker", "champion", "urgent", "stalled", "watch", "custom",
+  ]).notNull(),
+  title: varchar("title", { length: 512 }).notNull(),
+  body: text("body"),
+  severity: mysqlEnum("severity", ["critical", "high", "medium", "low"]).default("medium"),
+  status: mysqlEnum("status", ["open", "resolved", "dismissed"]).notNull().default("open"),
+  resolvedAt: timestamp("resolvedAt"),
+  createdByUserId: int("createdByUserId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type PartnerFlag = typeof partnerFlags.$inferSelect;
+export type InsertPartnerFlag = typeof partnerFlags.$inferInsert;
+
+// ─── Connector Configs (Slack, Google Docs, Notion) ──────────────────────────
+export const connectorConfigs = mysqlTable("connector_configs", {
+  id: int("id").autoincrement().primaryKey(),
+  connectorType: mysqlEnum("connectorType", ["slack", "google_docs", "notion", "webhook", "email"]).notNull(),
+  name: varchar("name", { length: 256 }).notNull(),
+  isEnabled: boolean("isEnabled").default(false).notNull(),
+  // Encrypted/stored config (JSON blob — actual tokens stored server-side in env)
+  configJson: json("configJson").$type<Record<string, string>>().default({}),
+  // Slack: channel ID, Google: folder ID, Notion: database ID
+  targetId: varchar("targetId", { length: 512 }),
+  targetName: varchar("targetName", { length: 256 }),
+  // What to sync
+  syncKnowledge: boolean("syncKnowledge").default(true).notNull(),
+  syncAlerts: boolean("syncAlerts").default(true).notNull(),
+  syncPress: boolean("syncPress").default(false).notNull(),
+  syncDiscrepancies: boolean("syncDiscrepancies").default(false).notNull(),
+  lastSyncAt: timestamp("lastSyncAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ConnectorConfig = typeof connectorConfigs.$inferSelect;
+export type InsertConnectorConfig = typeof connectorConfigs.$inferInsert;
+
+// ─── Extend alerts with sourceUrl for "open full source" ─────────────────────
+// (alerts table already exists — we add sourceUrl via migration SQL)

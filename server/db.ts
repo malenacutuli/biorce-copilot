@@ -31,6 +31,14 @@ import {
   pharmaOutreachLog,
   pharmaSignals,
 } from "../drizzle/schema";
+import {
+  MediaItem, InsertMediaItem, mediaItems,
+  PressItem, InsertPressItem, pressItems,
+  SourceComment, InsertSourceComment, sourceComments,
+  PartnerActivity, InsertPartnerActivity, partnerActivities,
+  PartnerFlag, InsertPartnerFlag, partnerFlags,
+  ConnectorConfig, InsertConnectorConfig, connectorConfigs,
+} from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -403,4 +411,208 @@ export async function getPharmaOutreachLog(signalId: number) {
 function computeCompositeScore(strength: number, fit: number, urgency: number, access: number): number {
   // Weighted: signal strength 35%, fit 35%, urgency 20%, access 10%
   return Math.round((strength * 0.35 + fit * 0.35 + urgency * 0.2 + access * 0.1) * 10) / 10;
+}
+
+// ─── Media Library ────────────────────────────────────────────────────────────
+export async function getMediaItems(opts?: { mediaType?: string; search?: string; limit?: number; offset?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  const { like, eq, and, desc, or } = await import("drizzle-orm");
+  const conditions: any[] = [];
+  if (opts?.mediaType) conditions.push(eq(mediaItems.mediaType, opts.mediaType as any));
+  if (opts?.search) conditions.push(or(like(mediaItems.title, `%${opts.search}%`), like(mediaItems.source, `%${opts.search}%`)));
+  const q = db.select().from(mediaItems).orderBy(desc(mediaItems.createdAt)).limit(opts?.limit ?? 50).offset(opts?.offset ?? 0);
+  if (conditions.length > 0) return q.where(and(...conditions));
+  return q;
+}
+
+export async function getMediaItemById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const { eq } = await import("drizzle-orm");
+  const rows = await db.select().from(mediaItems).where(eq(mediaItems.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function createMediaItem(data: Omit<InsertMediaItem, "id" | "createdAt" | "updatedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.insert(mediaItems).values(data as any);
+}
+
+export async function updateMediaItem(id: number, data: Partial<Omit<InsertMediaItem, "id" | "createdAt">>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { eq } = await import("drizzle-orm");
+  await db.update(mediaItems).set(data as any).where(eq(mediaItems.id, id));
+}
+
+export async function deleteMediaItem(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { eq } = await import("drizzle-orm");
+  await db.delete(mediaItems).where(eq(mediaItems.id, id));
+}
+
+export async function countMediaItems() {
+  const db = await getDb();
+  if (!db) return 0;
+  const { sql } = await import("drizzle-orm");
+  const result = await db.select({ count: sql<number>`count(*)` }).from(mediaItems);
+  return Number(result[0]?.count ?? 0);
+}
+
+// ─── Press Room ───────────────────────────────────────────────────────────────
+export async function getPressItems(opts?: { pressType?: string; sentiment?: string; search?: string; limit?: number; offset?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  const { like, eq, and, desc, or } = await import("drizzle-orm");
+  const conditions: any[] = [];
+  if (opts?.pressType) conditions.push(eq(pressItems.pressType, opts.pressType as any));
+  if (opts?.sentiment) conditions.push(eq(pressItems.sentiment, opts.sentiment as any));
+  if (opts?.search) conditions.push(or(like(pressItems.title, `%${opts.search}%`), like(pressItems.outlet, `%${opts.search}%`)));
+  const q = db.select().from(pressItems).orderBy(desc(pressItems.publishedAt)).limit(opts?.limit ?? 50).offset(opts?.offset ?? 0);
+  if (conditions.length > 0) return q.where(and(...conditions));
+  return q;
+}
+
+export async function getPressItemById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const { eq } = await import("drizzle-orm");
+  const rows = await db.select().from(pressItems).where(eq(pressItems.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function createPressItem(data: Omit<InsertPressItem, "id" | "createdAt" | "updatedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.insert(pressItems).values(data as any);
+}
+
+export async function updatePressItem(id: number, data: Partial<Omit<InsertPressItem, "id" | "createdAt">>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { eq } = await import("drizzle-orm");
+  await db.update(pressItems).set(data as any).where(eq(pressItems.id, id));
+}
+
+export async function deletePressItem(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { eq } = await import("drizzle-orm");
+  await db.delete(pressItems).where(eq(pressItems.id, id));
+}
+
+export async function countPressItems() {
+  const db = await getDb();
+  if (!db) return 0;
+  const { sql } = await import("drizzle-orm");
+  const result = await db.select({ count: sql<number>`count(*)` }).from(pressItems);
+  return Number(result[0]?.count ?? 0);
+}
+
+// ─── Source Comments ──────────────────────────────────────────────────────────
+export async function getSourceComments(targetTable: string, targetId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const { eq, and, desc } = await import("drizzle-orm");
+  return db.select().from(sourceComments)
+    .where(and(eq(sourceComments.targetTable, targetTable), eq(sourceComments.targetId, targetId)))
+    .orderBy(desc(sourceComments.createdAt));
+}
+
+export async function createSourceComment(data: Omit<InsertSourceComment, "id" | "createdAt" | "updatedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.insert(sourceComments).values(data as any);
+}
+
+export async function updateSourceCommentStatus(id: number, status: SourceComment["status"]) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { eq } = await import("drizzle-orm");
+  await db.update(sourceComments).set({ status, resolvedAt: status !== "open" ? new Date() : null } as any).where(eq(sourceComments.id, id));
+}
+
+export async function deleteSourceComment(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { eq } = await import("drizzle-orm");
+  await db.delete(sourceComments).where(eq(sourceComments.id, id));
+}
+
+// ─── Partner Activities ───────────────────────────────────────────────────────
+export async function getPartnerActivities(partnerId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const { eq, desc } = await import("drizzle-orm");
+  return db.select().from(partnerActivities).where(eq(partnerActivities.partnerId, partnerId)).orderBy(desc(partnerActivities.loggedAt));
+}
+
+export async function createPartnerActivity(data: Omit<InsertPartnerActivity, "id" | "createdAt" | "loggedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.insert(partnerActivities).values(data as any);
+}
+
+export async function deletePartnerActivity(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { eq } = await import("drizzle-orm");
+  await db.delete(partnerActivities).where(eq(partnerActivities.id, id));
+}
+
+// ─── Partner Flags ────────────────────────────────────────────────────────────
+export async function getPartnerFlags(partnerId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const { eq, desc } = await import("drizzle-orm");
+  return db.select().from(partnerFlags).where(eq(partnerFlags.partnerId, partnerId)).orderBy(desc(partnerFlags.createdAt));
+}
+
+export async function createPartnerFlag(data: Omit<InsertPartnerFlag, "id" | "createdAt" | "updatedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.insert(partnerFlags).values(data as any);
+}
+
+export async function resolvePartnerFlag(id: number, status: "resolved" | "dismissed") {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { eq } = await import("drizzle-orm");
+  await db.update(partnerFlags).set({ status, resolvedAt: new Date() } as any).where(eq(partnerFlags.id, id));
+}
+
+export async function deletePartnerFlag(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { eq } = await import("drizzle-orm");
+  await db.delete(partnerFlags).where(eq(partnerFlags.id, id));
+}
+
+// ─── Connector Configs ────────────────────────────────────────────────────────
+export async function getConnectorConfigs() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(connectorConfigs);
+}
+
+export async function upsertConnectorConfig(data: Omit<InsertConnectorConfig, "id" | "createdAt" | "updatedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { eq } = await import("drizzle-orm");
+  const existing = await db.select().from(connectorConfigs).where(eq(connectorConfigs.connectorType, data.connectorType)).limit(1);
+  if (existing.length > 0) {
+    await db.update(connectorConfigs).set(data as any).where(eq(connectorConfigs.id, existing[0].id));
+  } else {
+    await db.insert(connectorConfigs).values(data as any);
+  }
+}
+
+export async function toggleConnector(id: number, isEnabled: boolean) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { eq } = await import("drizzle-orm");
+  await db.update(connectorConfigs).set({ isEnabled } as any).where(eq(connectorConfigs.id, id));
 }

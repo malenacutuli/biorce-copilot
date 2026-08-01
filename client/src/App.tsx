@@ -17,6 +17,9 @@ import Login from "./pages/Login";
 import BoardMemo from "./pages/BoardMemo";
 import Admin from "./pages/Admin";
 import PharmaSignal from "./pages/PharmaSignal";
+import MediaLibrary from "./pages/MediaLibrary";
+import PressRoom from "./pages/PressRoom";
+import Connectors from "./pages/Connectors";
 
 function Router() {
   return (
@@ -34,6 +37,9 @@ function Router() {
       <Route path="/board-memo" component={BoardMemo} />
       <Route path="/admin" component={Admin} />
       <Route path="/pharma-signal" component={PharmaSignal} />
+      <Route path="/media" component={MediaLibrary} />
+      <Route path="/press" component={PressRoom} />
+      <Route path="/connectors" component={Connectors} />
       <Route component={NotFound} />
     </Switch>
   );

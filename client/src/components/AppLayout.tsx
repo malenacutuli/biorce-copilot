@@ -3,7 +3,7 @@ import { startLogin } from "@/const";
 import { trpc } from "@/lib/trpc";
 import {
   AlertTriangle, Bell, BookOpen, Brain, FileText, Home,
-  Network, Scale, Settings, TrendingUp, Users, Zap,
+  Network, Newspaper, Plug, Scale, Settings, TrendingUp, Users, Video, Zap,
 } from "lucide-react";
 import { useEffect } from "react";
 import { Link, useLocation } from "wouter";
@@ -13,6 +13,8 @@ const navItems = [
   { href: "/copilot", icon: Brain, label: "AI Copilot" },
   { href: "/pharma-signal", icon: Zap, label: "Pharma Signals" },
   { href: "/knowledge", icon: BookOpen, label: "Knowledge Base" },
+  { href: "/media", icon: Video, label: "Media Library" },
+  { href: "/press", icon: Newspaper, label: "Press Room" },
   { href: "/regulatory", icon: Scale, label: "Regulatory Tracker" },
   { href: "/competitive", icon: TrendingUp, label: "Competitive Intel" },
   { href: "/partnerships", icon: Users, label: "Partnership Pipeline" },
@@ -20,6 +22,7 @@ const navItems = [
   { href: "/alerts", icon: Bell, label: "Alerts & Digests" },
   { href: "/graph", icon: Network, label: "Knowledge Graph" },
   { href: "/board-memo", icon: FileText, label: "Board Memo Export" },
+  { href: "/connectors", icon: Plug, label: "Connectors" },
   { href: "/admin", icon: Settings, label: "Admin Panel" },
 ];
 

@@ -21,6 +21,14 @@ import {
   updatePharmaSignalStatus, updatePharmaSignalNotes,
   logPharmaOutreach, getPharmaOutreachLog,
 } from "./db";
+import {
+  getMediaItems, getMediaItemById, createMediaItem, updateMediaItem, deleteMediaItem, countMediaItems,
+  getPressItems, getPressItemById, createPressItem, updatePressItem, deletePressItem, countPressItems,
+  getSourceComments, createSourceComment, updateSourceCommentStatus, deleteSourceComment,
+  getPartnerActivities, createPartnerActivity, deletePartnerActivity,
+  getPartnerFlags, createPartnerFlag, resolvePartnerFlag, deletePartnerFlag,
+  getConnectorConfigs, upsertConnectorConfig, toggleConnector,
+} from "./db";
 
 // ─── Knowledge Router ─────────────────────────────────────────────────────────
 const knowledgeRouter = router({
@@ -454,6 +462,205 @@ const pharmaSignalRouter = router({
     .query(({ input }) => getPharmaOutreachLog(input.signalId)),
 });
 
+// ─── Media Library Router ─────────────────────────────────────────────────────
+const mediaRouter = router({
+  list: protectedProcedure
+    .input(z.object({ mediaType: z.string().optional(), search: z.string().optional(), limit: z.number().default(50), offset: z.number().default(0) }))
+    .query(({ input }) => getMediaItems(input)),
+
+  byId: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const item = await getMediaItemById(input.id);
+      if (!item) throw new TRPCError({ code: "NOT_FOUND" });
+      return item;
+    }),
+
+  count: protectedProcedure.query(() => countMediaItems()),
+
+  create: protectedProcedure
+    .input(z.object({
+      title: z.string().min(1),
+      mediaType: z.enum(["podcast", "video", "interview", "webinar", "conference_talk", "document", "other"]),
+      source: z.string().optional(),
+      sourceUrl: z.string().optional(),
+      youtubeUrl: z.string().optional(),
+      thumbnailUrl: z.string().optional(),
+      description: z.string().optional(),
+      transcript: z.string().optional(),
+      duration: z.number().optional(),
+      publishedAt: z.string().optional(),
+      speaker: z.string().optional(),
+      tags: z.string().optional(),
+      verificationStatus: z.enum(["verified", "inferred", "unverified"]).default("unverified"),
+      sourceOfTruth: z.enum(["primary", "secondary", "tertiary"]).optional(),
+    }))
+    .mutation(({ input }) => createMediaItem(input as any)),
+
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      title: z.string().optional(),
+      description: z.string().optional(),
+      transcript: z.string().optional(),
+      tags: z.string().optional(),
+      verificationStatus: z.enum(["verified", "inferred", "unverified"]).optional(),
+      sourceOfTruth: z.enum(["primary", "secondary", "tertiary"]).optional(),
+    }))
+    .mutation(({ input: { id, ...data } }) => updateMediaItem(id, data as any)),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(({ input }) => deleteMediaItem(input.id)),
+});
+
+// ─── Press Room Router ────────────────────────────────────────────────────────
+const pressRouter = router({
+  list: protectedProcedure
+    .input(z.object({ pressType: z.string().optional(), sentiment: z.string().optional(), search: z.string().optional(), limit: z.number().default(50), offset: z.number().default(0) }))
+    .query(({ input }) => getPressItems(input)),
+
+  byId: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const item = await getPressItemById(input.id);
+      if (!item) throw new TRPCError({ code: "NOT_FOUND" });
+      return item;
+    }),
+
+  count: protectedProcedure.query(() => countPressItems()),
+
+  create: protectedProcedure
+    .input(z.object({
+      title: z.string().min(1),
+      outlet: z.string().min(1),
+      author: z.string().optional(),
+      summary: z.string().optional(),
+      fullContent: z.string().optional(),
+      sourceUrl: z.string().optional(),
+      publishedAt: z.string().optional(),
+      pressType: z.enum(["press_release", "news_mention", "feature", "interview", "op_ed", "award", "other"]).default("news_mention"),
+      sentiment: z.enum(["positive", "neutral", "negative", "mixed"]).default("neutral"),
+      verificationStatus: z.enum(["verified", "inferred", "unverified"]).default("unverified"),
+      sourceOfTruth: z.enum(["primary", "secondary", "tertiary"]).optional(),
+      tags: z.string().optional(),
+      entities: z.string().optional(),
+    }))
+    .mutation(({ input }) => createPressItem(input as any)),
+
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      summary: z.string().optional(),
+      fullContent: z.string().optional(),
+      sentiment: z.enum(["positive", "neutral", "negative", "mixed"]).optional(),
+      verificationStatus: z.enum(["verified", "inferred", "unverified"]).optional(),
+      sourceOfTruth: z.enum(["primary", "secondary", "tertiary"]).optional(),
+      tags: z.string().optional(),
+    }))
+    .mutation(({ input: { id, ...data } }) => updatePressItem(id, data as any)),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(({ input }) => deletePressItem(input.id)),
+});
+
+// ─── Source Comments Router ───────────────────────────────────────────────────
+const commentsRouter = router({
+  list: protectedProcedure
+    .input(z.object({ targetTable: z.string(), targetId: z.number() }))
+    .query(({ input }) => getSourceComments(input.targetTable, input.targetId)),
+
+  create: protectedProcedure
+    .input(z.object({
+      targetTable: z.string(),
+      targetId: z.number(),
+      commentType: z.enum(["correction", "addition", "flag", "note"]).default("note"),
+      body: z.string().min(1),
+      proposedValue: z.string().optional(),
+      fieldName: z.string().optional(),
+    }))
+    .mutation(({ input, ctx }) => createSourceComment({ ...input, authorId: ctx.user.id, status: "open" } as any)),
+
+  updateStatus: protectedProcedure
+    .input(z.object({ id: z.number(), status: z.enum(["open", "accepted", "rejected"]) }))
+    .mutation(({ input }) => updateSourceCommentStatus(input.id, input.status)),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(({ input }) => deleteSourceComment(input.id)),
+});
+
+// ─── Partner CRM Router (activities + flags) ──────────────────────────────────
+const partnerCrmRouter = router({
+  listActivities: protectedProcedure
+    .input(z.object({ partnerId: z.number() }))
+    .query(({ input }) => getPartnerActivities(input.partnerId)),
+
+  logActivity: protectedProcedure
+    .input(z.object({
+      partnerId: z.number(),
+      activityType: z.enum(["email", "call", "meeting", "demo", "proposal_sent", "contract_sent", "note", "other"]),
+      summary: z.string().min(1),
+      outcome: z.string().optional(),
+      nextAction: z.string().optional(),
+      nextActionDue: z.string().optional(),
+      linkedSourceTable: z.string().optional(),
+      linkedSourceId: z.number().optional(),
+    }))
+    .mutation(({ input, ctx }) => createPartnerActivity({ ...input, loggedBy: ctx.user.id } as any)),
+
+  deleteActivity: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(({ input }) => deletePartnerActivity(input.id)),
+
+  listFlags: protectedProcedure
+    .input(z.object({ partnerId: z.number() }))
+    .query(({ input }) => getPartnerFlags(input.partnerId)),
+
+  createFlag: protectedProcedure
+    .input(z.object({
+      partnerId: z.number(),
+      flagType: z.enum(["risk", "opportunity", "blocker", "follow_up", "intel_conflict", "other"]),
+      title: z.string().min(1),
+      body: z.string().optional(),
+      severity: z.enum(["low", "medium", "high", "critical"]).default("medium"),
+      linkedSourceTable: z.string().optional(),
+      linkedSourceId: z.number().optional(),
+      dueDate: z.string().optional(),
+    }))
+    .mutation(({ input, ctx }) => createPartnerFlag({ ...input, createdBy: ctx.user.id, status: "open" } as any)),
+
+  resolveFlag: protectedProcedure
+    .input(z.object({ id: z.number(), status: z.enum(["resolved", "dismissed"]) }))
+    .mutation(({ input }) => resolvePartnerFlag(input.id, input.status)),
+
+  deleteFlag: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(({ input }) => deletePartnerFlag(input.id)),
+});
+
+// ─── Connectors Router ────────────────────────────────────────────────────────
+const connectorsRouter = router({
+  list: protectedProcedure.query(() => getConnectorConfigs()),
+
+  upsert: protectedProcedure
+    .input(z.object({
+      connectorType: z.enum(["slack", "google_docs", "notion", "email", "webhook"]),
+      displayName: z.string().optional(),
+      webhookUrl: z.string().optional(),
+      apiToken: z.string().optional(),
+      workspaceId: z.string().optional(),
+      syncFrequency: z.string().optional(),
+      config: z.string().optional(),
+    }))
+    .mutation(({ input }) => upsertConnectorConfig({ ...input, isEnabled: true } as any)),
+
+  toggle: protectedProcedure
+    .input(z.object({ id: z.number(), isEnabled: z.boolean() }))
+    .mutation(({ input }) => toggleConnector(input.id, input.isEnabled)),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -475,6 +682,11 @@ export const appRouter = router({
   copilot: copilotRouter,
   boardMemo: boardMemoRouter,
   pharmaSignal: pharmaSignalRouter,
+  media: mediaRouter,
+  press: pressRouter,
+  comments: commentsRouter,
+  partnerCrm: partnerCrmRouter,
+  connectors: connectorsRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -59,3 +59,15 @@
 - [x] Add outreach log modal
 - [x] Add nav item to AppLayout
 - [x] Seed 15+ real pharma signal records
+
+## Biorce Brain Upgrade (Media Library, Press Room, CRM, Connectors)
+- [x] DB schema extended: media_items, press_items, source_comments, partner_activities, partner_flags, connector_configs
+- [x] All 9 podcast transcripts seeded into media_items table
+- [x] Press Room: 4 scraped Biorce press articles seeded into press_items
+- [x] Media Library page — upload, display, transcript viewer, comments, download, delete
+- [x] Press Room page — press items with sentiment/verification badges, source URL, comments, add/delete
+- [x] Connectors page — Slack, Google Docs, Notion, Webhook, Email; add/toggle/remove
+- [x] Partnership CRM upgraded — activity log (email/call/meeting/demo/note), flags (risk/opportunity/blocker/follow_up), follow-up dates, interconnectivity, tabbed detail panel
+- [x] Alerts upgraded — full "Open Full Source" button per alert; "No source URL — add one to verify" for unsourced alerts; Biorce Implication panel; type icons
+- [x] Sidebar navigation updated with Media Library, Press Room, Connectors
+- [x] 0 TypeScript errors after all changes
