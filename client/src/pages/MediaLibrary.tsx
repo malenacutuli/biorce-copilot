@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import {
   Play, Trash2, Download, ExternalLink, MessageSquare,
   X, Check, ChevronDown, Video, Mic, FileText, Plus, Search,
+  Youtube,
 } from "lucide-react";
 
 const MEDIA_TYPES = ["all", "video", "audio", "document", "image", "transcript"];
@@ -18,6 +19,50 @@ const verificationBadge: Record<string, { bg: string; label: string }> = {
 const mediaTypeIcon: Record<string, React.FC<any>> = {
   audio: Mic, video: Video, document: FileText, image: FileText, transcript: MessageSquare,
 };
+
+/** Extract YouTube video ID from a URL */
+function getYouTubeId(url?: string | null): string | null {
+  if (!url) return null;
+  const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+function YouTubeEmbed({ videoId, title }: { videoId: string; title: string }) {
+  const [playing, setPlaying] = useState(false);
+  const thumb = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+  if (!playing) {
+    return (
+      <div
+        className="relative w-full rounded-xl overflow-hidden cursor-pointer group"
+        style={{ aspectRatio: "16/9", background: "#000" }}
+        onClick={() => setPlaying(true)}
+      >
+        <img src={thumb} alt={title} className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-16 h-16 rounded-full flex items-center justify-center transition-transform group-hover:scale-110"
+            style={{ background: "rgba(255,0,0,0.85)" }}>
+            <Play className="w-7 h-7 text-white ml-1" fill="white" />
+          </div>
+        </div>
+        <div className="absolute bottom-2 right-2 flex items-center gap-1 px-2 py-1 rounded text-xs font-medium"
+          style={{ background: "rgba(0,0,0,0.7)", color: "#fff" }}>
+          <Youtube className="w-3 h-3" style={{ color: "#ff0000" }} /> YouTube
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="relative w-full rounded-xl overflow-hidden" style={{ aspectRatio: "16/9" }}>
+      <iframe
+        src={`https://www.youtube.com/embed/${videoId}?autoplay=1`}
+        title={title}
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        allowFullScreen
+        className="w-full h-full border-0"
+      />
+    </div>
+  );
+}
 
 function SourceComments({ targetTable, targetId }: { targetTable: string; targetId: number }) {
   const { data: comments, refetch } = trpc.comments.list.useQuery({ targetTable, targetId });
@@ -92,7 +137,7 @@ function UploadModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
           {[
             { label: "Title *", key: "title", type: "text" },
             { label: "Source / Channel", key: "source", type: "text" },
-            { label: "External URL (YouTube etc.)", key: "externalUrl", type: "url" },
+            { label: "YouTube / External URL", key: "externalUrl", type: "url" },
             { label: "Published Date", key: "publishedAt", type: "date" },
             { label: "Tags (comma separated)", key: "tags", type: "text" },
           ].map(({ label, key, type }) => (
@@ -149,7 +194,6 @@ export default function MediaLibrary() {
   const [selected, setSelected] = useState<number | null>(null);
   const [showUpload, setShowUpload] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
-  const utils = trpc.useUtils();
 
   const { data: items, isLoading, refetch } = trpc.media.list.useQuery({
     mediaType: mediaType === "all" ? undefined : mediaType,
@@ -174,12 +218,13 @@ export default function MediaLibrary() {
   };
 
   const TypeIcon = detail ? (mediaTypeIcon[detail.mediaType] ?? FileText) : FileText;
+  const ytId = detail ? getYouTubeId(detail.externalUrl) : null;
 
   return (
     <AppLayout>
       {showUpload && <UploadModal onClose={() => setShowUpload(false)} onSuccess={refetch} />}
       <div className="flex h-full">
-        {/* Left panel */}
+        {/* Left panel — list */}
         <div className="w-80 flex-shrink-0 border-r flex flex-col" style={{ borderColor: "var(--color-border)" }}>
           <div className="p-4 border-b" style={{ borderColor: "var(--color-border)" }}>
             <div className="flex items-center justify-between mb-3">
@@ -205,26 +250,43 @@ export default function MediaLibrary() {
               ))}
             </div>
           </div>
+
+          {/* Item list with thumbnails */}
           <div className="flex-1 overflow-y-auto">
             {isLoading && <div className="p-4 text-xs" style={{ color: "var(--color-muted-foreground)" }}>Loading...</div>}
             {items?.map((item: any) => {
               const Icon = mediaTypeIcon[item.mediaType] ?? FileText;
               const vb = verificationBadge[item.verificationStatus] ?? verificationBadge.unverified;
+              const thumb = item.thumbnailUrl || (getYouTubeId(item.externalUrl) ? `https://img.youtube.com/vi/${getYouTubeId(item.externalUrl)}/mqdefault.jpg` : null);
               return (
-                <div key={item.id} onClick={() => setSelected(item.id)}
-                  className="p-3 border-b cursor-pointer transition-all"
+                <div key={item.id} onClick={() => { setSelected(item.id); setShowTranscript(false); }}
+                  className="border-b cursor-pointer transition-all"
                   style={{ borderColor: "var(--color-border)", background: selected === item.id ? "var(--color-accent)" : "transparent" }}>
-                  <div className="flex items-start gap-2">
-                    <div className="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: "var(--color-muted)" }}>
-                      <Icon className="w-3.5 h-3.5" style={{ color: "var(--color-primary)" }} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium leading-tight mb-1 line-clamp-2" style={{ color: "var(--color-foreground)" }}>{item.title}</div>
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: "var(--color-muted)", color: "var(--color-muted-foreground)", fontSize: "10px" }}>{item.mediaType}</span>
-                        <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: vb.bg + "33", color: vb.bg, fontSize: "10px" }}>{vb.label}</span>
-                        {item.source && <span className="text-xs truncate" style={{ color: "var(--color-muted-foreground)", fontSize: "10px" }}>{item.source}</span>}
+                  {/* Thumbnail row */}
+                  {thumb ? (
+                    <div className="relative w-full" style={{ aspectRatio: "16/9", background: "#000" }}>
+                      <img src={thumb} alt={item.title} className="w-full h-full object-cover opacity-80" />
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "rgba(255,0,0,0.8)" }}>
+                          <Play className="w-4 h-4 text-white ml-0.5" fill="white" />
+                        </div>
                       </div>
+                      <div className="absolute top-1.5 right-1.5">
+                        <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: vb.bg + "dd", color: "#fff", fontSize: "9px" }}>{vb.label}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="w-full flex items-center justify-center" style={{ aspectRatio: "16/9", background: "var(--color-muted)" }}>
+                      <Icon className="w-8 h-8" style={{ color: "var(--color-muted-foreground)" }} />
+                    </div>
+                  )}
+                  {/* Title row */}
+                  <div className="p-2.5">
+                    <div className="text-xs font-medium leading-tight mb-1 line-clamp-2" style={{ color: "var(--color-foreground)" }}>{item.title}</div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: "var(--color-muted)", color: "var(--color-muted-foreground)", fontSize: "10px" }}>{item.mediaType}</span>
+                      {item.source && <span className="text-xs truncate" style={{ color: "var(--color-muted-foreground)", fontSize: "10px" }}>{item.source}</span>}
+                      {item.transcriptText && <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: "oklch(0.3 0.05 240)", color: "oklch(0.75 0.1 240)", fontSize: "10px" }}>Transcript</span>}
                     </div>
                   </div>
                 </div>
@@ -239,7 +301,7 @@ export default function MediaLibrary() {
           </div>
         </div>
 
-        {/* Right panel */}
+        {/* Right panel — detail */}
         <div className="flex-1 overflow-y-auto">
           {!selected && (
             <div className="flex flex-col items-center justify-center h-full gap-3">
@@ -248,11 +310,22 @@ export default function MediaLibrary() {
             </div>
           )}
           {detail && (
-            <div className="p-6">
+            <div className="p-6 max-w-3xl">
+              {/* YouTube embed or thumbnail */}
+              {ytId ? (
+                <div className="mb-5">
+                  <YouTubeEmbed videoId={ytId} title={detail.title} />
+                </div>
+              ) : detail.thumbnailUrl ? (
+                <div className="mb-5 rounded-xl overflow-hidden" style={{ aspectRatio: "16/9" }}>
+                  <img src={detail.thumbnailUrl} alt={detail.title} className="w-full h-full object-cover" />
+                </div>
+              ) : null}
+
               {/* Header */}
-              <div className="flex items-start gap-4 mb-6">
-                <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "var(--color-muted)" }}>
-                  <TypeIcon className="w-6 h-6" style={{ color: "var(--color-primary)" }} />
+              <div className="flex items-start gap-4 mb-4">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "var(--color-muted)" }}>
+                  <TypeIcon className="w-5 h-5" style={{ color: "var(--color-primary)" }} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <h2 className="text-base font-semibold leading-tight mb-1" style={{ color: "var(--color-foreground)" }}>{detail.title}</h2>
@@ -261,34 +334,36 @@ export default function MediaLibrary() {
                     {detail.publishedAt && <span className="text-xs" style={{ color: "var(--color-muted-foreground)" }}>· {new Date(detail.publishedAt).toLocaleDateString()}</span>}
                   </div>
                 </div>
-                <div className="flex gap-2 flex-wrap justify-end">
-                  {detail.externalUrl && (
-                    <a href={detail.externalUrl} target="_blank" rel="noopener noreferrer"
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium"
-                      style={{ background: "var(--color-accent)", color: "var(--color-foreground)" }}>
-                      <Play className="w-3 h-3" /> Watch
-                    </a>
-                  )}
-                  {detail.fileUrl && (
-                    <a href={detail.fileUrl} target="_blank" rel="noopener noreferrer"
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs"
-                      style={{ background: "var(--color-accent)", color: "var(--color-muted-foreground)" }}>
-                      <ExternalLink className="w-3 h-3" /> Source
-                    </a>
-                  )}
-                  {detail.transcriptText && (
-                    <button onClick={handleDownloadTranscript}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs"
-                      style={{ background: "var(--color-accent)", color: "var(--color-muted-foreground)" }}>
-                      <Download className="w-3 h-3" /> Transcript
-                    </button>
-                  )}
-                  <button onClick={() => { if (confirm("Delete this media item?")) deleteMedia.mutate({ id: detail.id }); }}
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex gap-2 flex-wrap mb-5">
+                {detail.externalUrl && (
+                  <a href={detail.externalUrl} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium"
+                    style={{ background: "oklch(0.55 0.22 25 / 0.15)", color: "oklch(0.75 0.18 25)" }}>
+                    <Youtube className="w-3 h-3" /> Open on YouTube
+                  </a>
+                )}
+                {detail.fileUrl && (
+                  <a href={detail.fileUrl} target="_blank" rel="noopener noreferrer"
                     className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs"
-                    style={{ background: "oklch(0.55 0.2 25 / 0.15)", color: "oklch(0.65 0.2 25)" }}>
-                    <Trash2 className="w-3 h-3" /> Delete
+                    style={{ background: "var(--color-accent)", color: "var(--color-muted-foreground)" }}>
+                    <ExternalLink className="w-3 h-3" /> Source File
+                  </a>
+                )}
+                {detail.transcriptText && (
+                  <button onClick={handleDownloadTranscript}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs"
+                    style={{ background: "var(--color-accent)", color: "var(--color-muted-foreground)" }}>
+                    <Download className="w-3 h-3" /> Download Transcript
                   </button>
-                </div>
+                )}
+                <button onClick={() => { if (confirm("Delete this media item?")) deleteMedia.mutate({ id: detail.id }); }}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs ml-auto"
+                  style={{ background: "oklch(0.55 0.2 25 / 0.15)", color: "oklch(0.65 0.2 25)" }}>
+                  <Trash2 className="w-3 h-3" /> Delete
+                </button>
               </div>
 
               {/* Classification badges */}
@@ -330,12 +405,12 @@ export default function MediaLibrary() {
                     style={{ background: "var(--color-card)", border: "1px solid var(--color-border)" }}>
                     <MessageSquare className="w-4 h-4 flex-shrink-0" style={{ color: "var(--color-primary)" }} />
                     <span className="text-xs font-semibold flex-1" style={{ color: "var(--color-foreground)" }}>
-                      Full Transcript ({Math.round((detail.transcriptText?.length ?? 0) / 5)} words approx.)
+                      Full Transcript ({Math.round((detail.transcriptText?.length ?? 0) / 5).toLocaleString()} words approx.)
                     </span>
                     <ChevronDown className={`w-4 h-4 transition-transform ${showTranscript ? "rotate-180" : ""}`} style={{ color: "var(--color-muted-foreground)" }} />
                   </button>
                   {showTranscript && (
-                    <div className="mt-2 p-4 rounded-xl max-h-96 overflow-y-auto" style={{ background: "var(--color-accent)", border: "1px solid var(--color-border)" }}>
+                    <div className="mt-2 p-4 rounded-xl max-h-[32rem] overflow-y-auto" style={{ background: "var(--color-accent)", border: "1px solid var(--color-border)" }}>
                       <pre className="text-xs leading-relaxed whitespace-pre-wrap font-mono" style={{ color: "var(--color-foreground)" }}>{detail.transcriptText}</pre>
                     </div>
                   )}

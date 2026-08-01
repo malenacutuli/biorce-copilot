@@ -9,6 +9,7 @@ import {
   timestamp,
   varchar,
 } from "drizzle-orm/mysql-core";
+import { mediumtext } from "drizzle-orm/mysql-core";
 
 // ─── Users ────────────────────────────────────────────────────────────────────
 export const users = mysqlTable("users", {
@@ -278,7 +279,7 @@ export const mediaItems = mysqlTable("media_items", {
   // Linked knowledge item (if transcript was loaded)
   linkedKnowledgeItemId: int("linkedKnowledgeItemId"),
   // Transcript text (stored inline for search)
-  transcriptText: text("transcriptText"),
+  transcriptText: mediumtext("transcriptText"),
   isPublic: boolean("isPublic").default(true).notNull(),
   uploadedByUserId: int("uploadedByUserId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
