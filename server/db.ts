@@ -47,6 +47,9 @@ import {
   PartnershipAsset, InsertPartnershipAsset, partnershipAssets,
   OutcomeLearning, InsertOutcomeLearning, outcomeLearning,
 } from "../drizzle/schema";
+import {
+  JobExecution, jobExecutions,
+} from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -688,6 +691,43 @@ export async function getDecisionRoomById(id: number) {
   return rows[0] ?? null;
 }
 
+/**
+ * Finds an open/deliberating/consensus_reached Decision Room that is likely a duplicate
+ * of the given question. Checks by: partner, normalized title keywords, and status.
+ * Returns the first match or null.
+ */
+export async function findSimilarDecisionRoom(
+  question: string,
+  partnerId?: number | null
+): Promise<typeof decisionRooms.$inferSelect | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const { like, or, and, eq, inArray, desc: descOp } = await import("drizzle-orm");
+  // Extract first 5 meaningful words from question for fuzzy title match
+  const keywords = question.toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(w => w.length > 3 && !["what","that","this","with","from","have","will","should","which","whether"].includes(w))
+    .slice(0, 5);
+
+  const openStatuses = ["open", "deliberating", "consensus_reached"] as const;
+  const rows = await db.select().from(decisionRooms)
+    .where(inArray(decisionRooms.status, openStatuses))
+    .orderBy(descOp(decisionRooms.createdAt))
+    .limit(50);
+
+  // Score each row by keyword overlap
+  const scored = rows.map(row => {
+    const titleWords = (row.title + " " + (row.question ?? "")).toLowerCase();
+    const overlap = keywords.filter(k => titleWords.includes(k)).length;
+    const partnerMatch = partnerId && row.partnerId === partnerId ? 2 : 0;
+    return { row, score: overlap + partnerMatch };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  // Require at least 3 keyword overlaps to consider it a duplicate
+  return scored[0]?.score >= 3 ? scored[0].row : null;
+}
+
 export async function updateDecisionRoom(id: number, data: Partial<Omit<InsertDecisionRoom, "id" | "createdAt">>) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -802,4 +842,146 @@ export async function getOutcomeLearning(opts: { partnerId?: number; agentId?: s
   if (!db) return [];
   const { desc: descOp } = await import("drizzle-orm");
   return db.select().from(outcomeLearning).orderBy(descOp(outcomeLearning.predictedAt)).limit(opts.limit ?? 50);
+}
+
+// ─── Job Executions ───────────────────────────────────────────────────────────
+
+/**
+ * Acquire an idempotency lock for a job run.
+ * Returns the new execution record ID if the slot was free,
+ * or null if a record with the same idempotencyKey already exists.
+ */
+export async function acquireJobExecution(opts: {
+  jobName: string;
+  taskUid?: string;
+  idempotencyKey: string;
+  triggeredBy?: string;
+  force?: boolean;
+  parentExecutionId?: number;
+}): Promise<number | null> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+
+  // ── If force=true, skip idempotency check (admin forced rerun) ───────────
+  if (!opts.force) {
+    // Check for existing non-stale record (idempotency guard)
+    const lockLeaseCutoff = new Date(Date.now() - 30 * 60 * 1000); // 30-min lease
+    const existing = await db
+      .select({ id: jobExecutions.id, status: jobExecutions.status, inFlight: jobExecutions.inFlight, lockExpiresAt: (jobExecutions as any).lockExpiresAt })
+      .from(jobExecutions)
+      .where(eq(jobExecutions.idempotencyKey, opts.idempotencyKey))
+      .limit(1);
+    if (existing.length > 0) {
+      const rec = existing[0];
+      // Allow reclaim if job is in-flight but lock lease has expired (crashed job)
+      const isStale = rec.inFlight && rec.lockExpiresAt && new Date(rec.lockExpiresAt) < lockLeaseCutoff;
+      if (!isStale) {
+        console.log(`[job-exec] Duplicate run blocked — idempotencyKey=${opts.idempotencyKey} exists (id=${rec.id}, status=${rec.status})`);
+        return null;
+      }
+      // Stale lock — delete the crashed record and allow a fresh attempt
+      console.log(`[job-exec] Stale lock reclaimed — idempotencyKey=${opts.idempotencyKey} (id=${rec.id}, lockExpiresAt=${rec.lockExpiresAt})`);
+      await db.delete(jobExecutions).where(eq(jobExecutions.id, rec.id));
+    }
+  }
+
+  // ── Atomic INSERT — unique constraint on idempotencyKey prevents races ───
+  const lockExpiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30-min lease
+  const [result] = await db.insert(jobExecutions).values({
+    jobName: opts.jobName,
+    taskUid: opts.taskUid,
+    idempotencyKey: opts.idempotencyKey,
+    inFlight: true,
+    lockExpiresAt,
+    status: "running",
+    triggeredBy: opts.triggeredBy ?? "cron",
+    attemptNumber: 1,
+    maxAttempts: 3,
+    parentExecutionId: opts.parentExecutionId,
+  } as any);
+  return (result as any).insertId as number;
+}
+
+/** Mark a job execution as succeeded and release the concurrency lock. */
+export async function completeJobExecution(id: number, opts: {
+  recordsRead?: number;
+  recordsWritten?: number;
+  alertsCreated?: number;
+  durationMs: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(jobExecutions).set({
+    status: "success",
+    inFlight: false,
+    completedAt: new Date(),
+    durationMs: opts.durationMs,
+    recordsRead: opts.recordsRead ?? 0,
+    recordsWritten: opts.recordsWritten ?? 0,
+    alertsCreated: opts.alertsCreated ?? 0,
+  } as any).where(eq(jobExecutions.id, id));
+}
+
+/** Mark a job execution as failed, record error detail, and optionally escalate. */
+export async function failJobExecution(id: number, opts: {
+  errorMessage: string;
+  errorStack?: string;
+  durationMs: number;
+  escalate?: boolean;
+  escalationNote?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(jobExecutions).set({
+    status: "failed",
+    inFlight: false,
+    completedAt: new Date(),
+    durationMs: opts.durationMs,
+    errorMessage: opts.errorMessage,
+    errorStack: opts.errorStack,
+    escalated: opts.escalate ?? false,
+    escalationNote: opts.escalationNote,
+  } as any).where(eq(jobExecutions.id, id));
+}
+
+/** Fetch recent execution records for a given job name. */
+export async function getJobExecutions(jobName: string, limit = 10): Promise<JobExecution[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(jobExecutions)
+    .where(eq(jobExecutions.jobName, jobName))
+    .orderBy(desc(jobExecutions.startedAt))
+    .limit(limit) as Promise<JobExecution[]>;
+}
+
+/** Fetch the most recent execution for every distinct job name (Admin panel status row). */
+export async function getLatestJobExecutions(): Promise<JobExecution[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const [rows] = await db.execute(sql`
+    SELECT je.*
+    FROM job_executions je
+    INNER JOIN (
+      SELECT jobName, MAX(startedAt) AS maxStarted
+      FROM job_executions
+      GROUP BY jobName
+    ) latest ON je.jobName = latest.jobName AND je.startedAt = latest.maxStarted
+    ORDER BY je.startedAt DESC
+  `);
+  return rows as unknown as JobExecution[];
+}
+
+/** Count consecutive failures for a job (for escalation threshold check). */
+export async function countConsecutiveFailures(jobName: string): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const recent = await db
+    .select({ status: jobExecutions.status })
+    .from(jobExecutions)
+    .where(eq(jobExecutions.jobName, jobName))
+    .orderBy(desc(jobExecutions.startedAt))
+    .limit(3);
+  return recent.filter(r => r.status === "failed").length;
 }

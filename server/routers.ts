@@ -3,11 +3,12 @@ import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { invokeLLM } from "./_core/llm";
 import { listHeartbeatJobs, updateHeartbeatJob } from "./_core/heartbeat";
 import { runBiorceOrchestrator, getAvailableAgents } from "./agentOrchestrator";
-import { runLangChainOrchestrator, toLegacyAnswer, LANGCHAIN_AGENTS, persistDecisionRoom } from "./langchainOrchestrator";
+import { runLangChainOrchestrator, toLegacyAnswer, LANGCHAIN_AGENTS, persistDecisionRoom, classifyDecisionGate, shouldCreateDecisionRoom, shouldPromptDecisionRoom } from "./langchainOrchestrator";
+import { executeDailyPartnershipPulse } from "./scheduledHandlers";
 import {
   countKnowledgeItems, countOpenDiscrepancies, countUnreadAlerts,
   countPartnersByStage, createAlert, createCiEvent, createKnowledgeItem,
@@ -17,7 +18,7 @@ import {
   getRegulatoryItems, getUserByOpenId, markAlertRead, updateDiscrepancyStatus,
   updatePartnerStage, upsertUser,
 } from "./db";
-import { exportKnowledgeItemsCsv, getDecisionRooms, getDecisionRoomById, getAgentClaims, getClaimVotes, getEvidenceForRoom, getPartnershipAssets, upsertPartnershipAsset, updatePartnershipAsset, getOutcomeLearning, recordActualOutcome } from "./db";
+import { exportKnowledgeItemsCsv, getDecisionRooms, getDecisionRoomById, findSimilarDecisionRoom, getAgentClaims, getClaimVotes, getEvidenceForRoom, getPartnershipAssets, upsertPartnershipAsset, updatePartnershipAsset, getOutcomeLearning, recordActualOutcome, getJobExecutions, getLatestJobExecutions } from "./db";
 import {
   getPharmaSignals, getPharmaSignalById, createPharmaSignal,
   updatePharmaSignalStatus, updatePharmaSignalNotes,
@@ -273,9 +274,9 @@ const copilotRouter = router({
         role: z.enum(["user", "assistant"]),
         content: z.string(),
       })).default([]),
-      useOrchestrator: z.boolean().default(true),
+    useOrchestrator: z.boolean().default(true),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       // Fetch relevant context from knowledge base
       // Full question search — multi-keyword, no truncation
       const relevantItems = await getKnowledgeItems({ search: input.question, limit: 12 });
@@ -310,13 +311,35 @@ const copilotRouter = router({
           partnerContext: partnerCtx,
         });
         const answer = toLegacyAnswer(lcResult);
-        // Persist every orchestration as a traceable decision room (fire-and-forget)
-        persistDecisionRoom(
-          input.question.slice(0, 120),
-          input.question,
-          lcResult,
-          {}
-        ).catch(e => console.error("[copilot] persistDecisionRoom failed:", e));
+        // ── Decision Room gate: classify, deduplicate, then persist ──────────────
+        const gateResult = classifyDecisionGate(input.question);
+        const autoCreate = gateResult.isDecision && gateResult.confidence >= 80 &&
+          (gateResult.materiality === "high" || gateResult.materiality === "critical");
+        const promptUser = gateResult.isDecision && gateResult.confidence >= 55 && gateResult.confidence < 80;
+
+        if (autoCreate) {
+          // Duplicate detection: search open rooms for a close match
+          findSimilarDecisionRoom(input.question, undefined).then(existingRoom => {
+            persistDecisionRoom(
+              input.question.slice(0, 120),
+              input.question,
+              lcResult,
+              {
+                gateConfidence: gateResult.confidence,
+                gateMateriality: gateResult.materiality,
+                gateRationale: gateResult.rationale,
+                gateVersion: gateResult.gateVersion,
+                roomSource: "auto",
+                initiatedBy: ctx.user?.openId ?? undefined,
+                existingRoomId: existingRoom?.id,
+              }
+            ).catch(e => console.error("[copilot] persistDecisionRoom failed:", e));
+          }).catch(e => console.error("[copilot] duplicate check failed:", e));
+        } else if (promptUser) {
+          console.log(`[copilot] Gate confidence ${gateResult.confidence} — will prompt user to confirm Decision Room`);
+        } else {
+          console.log(`[copilot] Conversation — gate: ${gateResult.rationale}`);
+        }
         const agentResults = lcResult.agentFindings.map(f => ({
           agentId: f.agentId,
           agentName: f.agentName,
@@ -333,6 +356,17 @@ const copilotRouter = router({
           orchestratedAnswer: { ...answer, consensusScore: lcResult.consensus.agreementScore, debateRounds: lcResult.debateRounds, conflictingAgents: lcResult.consensus.conflictingAgents },
           agentResults,
           sourcesUsed: relevantItems.map(i => ({ id: i.id, title: i.title, sourceName: i.sourceName, verificationStatus: i.verificationStatus })),
+          gateResult: {
+            isDecision: gateResult.isDecision,
+            confidence: gateResult.confidence,
+            materiality: gateResult.materiality,
+            rationale: gateResult.rationale,
+            alternatives: gateResult.alternatives,
+            proposedOwner: gateResult.proposedOwner,
+            proposedDeadline: gateResult.proposedDeadline,
+            autoCreated: autoCreate,
+            promptUser,
+          },
         };
       }
 
@@ -705,29 +739,51 @@ const connectorsRouter = router({
 
 // ─── Scheduled Agents Router ──────────────────────────────────────────────────
 const scheduledAgentsRouter = router({
+  latestExecutions: protectedProcedure.query(() => getLatestJobExecutions()),
+  listExecutions: protectedProcedure
+    .input(z.object({ jobName: z.string(), limit: z.number().optional() }))
+    .query(({ input }) => getJobExecutions(input.jobName, input.limit ?? 10)),
   listJobs: protectedProcedure.query(async ({ ctx }) => {
     const sessionCookie = (ctx.req as any).cookies?.[COOKIE_NAME] ?? "";
     const result = await listHeartbeatJobs(sessionCookie);
     return result.jobs;
   }),
-  triggerJob: protectedProcedure
-    .input(z.object({ path: z.string() }))
-    .mutation(async ({ input }) => {
-      const port = process.env.PORT || 3000;
-      const resp = await fetch(`http://localhost:${port}${input.path}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: "{}",
-      });
-      const body = await resp.json().catch(() => ({}));
-      return { status: resp.status, ok: resp.ok, body };
+  // Admin-only "Run Now" — calls the shared service directly.
+  // No internal HTTP fetch, no cookie forwarding, no IP checks.
+  triggerJob: adminProcedure
+    .input(z.object({
+      jobName: z.enum(["daily-partnership-pulse"]),
+      force: z.boolean().default(false),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const triggeredBy = input.force
+        ? `user:${ctx.user.openId}:forced`
+        : `user:${ctx.user.openId}`;
+      console.log(`[job-audit] user=${ctx.user.openId} triggered job="${input.jobName}" force=${input.force} at=${new Date().toISOString()}`);
+      if (input.jobName === "daily-partnership-pulse") {
+        const result = await executeDailyPartnershipPulse({ triggeredBy, force: input.force });
+        return result;
+      }
+      throw new TRPCError({ code: "BAD_REQUEST", message: `Unknown job: ${input.jobName}` });
     }),
-  toggleJob: protectedProcedure
+  toggleJob: adminProcedure
     .input(z.object({ taskUid: z.string(), enable: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const sessionCookie = (ctx.req as any).cookies?.[COOKIE_NAME] ?? "";
+      // Security: validate the UID against the live Biorce job registry before mutating.
+      // This prevents an admin from pausing unrelated Heartbeat jobs on the same account.
+      const listResult = await listHeartbeatJobs(sessionCookie);
+      const allowedJobs = listResult.jobs ?? [];
+      const target = allowedJobs.find((job: any) => job.taskUid === input.taskUid);
+      if (!target) {
+        throw new TRPCError({ code: "NOT_FOUND", message: `Job ${input.taskUid} not found in this project's Heartbeat registry.` });
+      }
       await updateHeartbeatJob(input.taskUid, { enable: input.enable }, sessionCookie);
-      return { ok: true };
+      // Audit log: record who toggled which job and when.
+      console.log(
+        `[job-audit] user=${ctx.user.openId} (${ctx.user.name}) ${input.enable ? "ENABLED" : "PAUSED"} job="${target.name}" uid=${input.taskUid} at=${new Date().toISOString()}`
+      );
+      return { ok: true, jobName: target.name, action: input.enable ? "enabled" : "paused" };
     }),
 });
 

@@ -87,3 +87,59 @@
 - [x] Register weekly-digest cron via manus-heartbeat CLI (09:00 UTC every Monday)
 - [x] Add Admin Panel Scheduled Jobs tab: live cron status, last run, next run, enable/disable toggle
 - [x] Add tRPC scheduledAgents.listJobs and scheduledAgents.toggleJob procedures
+
+## Scheduled Job Hardening
+- [x] Create reusable adminProcedure (throws FORBIDDEN if ctx.user.role !== "admin")
+- [x] Fix toggleJob: use adminProcedure instead of protectedProcedure
+- [x] Fix toggleJob: validate taskUid against live listHeartbeatJobs allowlist before mutation
+- [x] Add audit log entry on every toggle (who, when, job name, action: pause/enable)
+- [x] Add job_executions table: idempotency key, status, duration, records_read, records_written, error_detail, escalated
+- [x] Add concurrency lock (in-flight guard) to dailyPartnershipPulseHandler
+- [x] Add idempotency guard (duplicate run blocked on same-day key)
+- [x] Add human escalation threshold: alert owner when job fails 3 consecutive runs
+- [x] Expose execution log in Admin Scheduled Jobs panel (last N runs, status, duration, triggeredBy)
+- [x] Trigger daily-partnership-pulse end-to-end: execution record written (id=1, 13975ms, 63 read, 1 written), alert created (id=60001), idempotent on re-run (2 duplicate blocks confirmed)
+- [ ] SECURITY: Remove localhost bypass (req.ip check) from dailyPartnershipPulseHandler
+- [ ] Refactor into shared executeDailyPartnershipPulse(params) service — no internal HTTP fetch, no cookie forwarding
+- [ ] Update triggerJob tRPC procedure to call service directly (adminProcedure, real user ID, force flag)
+- [ ] Add unique DB constraint on idempotency_key column in job_executions
+- [ ] Make lock acquisition atomic (INSERT … ON DUPLICATE KEY UPDATE or SELECT FOR UPDATE)
+- [ ] Add lock lease/expiry (e.g. 30min) so crashed jobs do not remain locked forever
+- [ ] Link retry attempts to original execution record (parentExecutionId)
+- [ ] Store real user ID (ctx.user.id) in triggeredBy, not "manual:admin-ui"
+- [ ] Forced rerun (force=true) creates distinct audit entry and bypasses idempotency
+- [ ] Execution logs must not store prompts containing confidential partner data or credentials
+
+## Four Missing Decision Rooms
+- [ ] Seed Decision Room 2: Veeva/Medidata — Workflow Distribution partnership
+- [ ] Seed Decision Room 3: CDISC/TransCelerate — Standards Position partnership
+- [ ] Seed Decision Room 4: Velocity/Care Access — Execution Data Loop partnership
+- [ ] Seed Decision Room 5: Fifth asset (Series B / Investor Validation)
+- [ ] Verify Command Center shows all 5 rooms with correct consensus scores
+
+## Outcome Learning
+- [ ] Retain honest empty state OR add clearly labelled "Illustrative Calibration Example" entries (no fabricated history)
+- [ ] Add UI label distinguishing illustrative examples from real recorded outcomes
+
+## Copilot Decision Room Gate
+- [x] Add decision-gate check in Copilot: only create Decision Room when question contains material choice, alternatives, owner, deadline, and evidence
+- [x] Implement structured 5-signal classifier (classifyDecisionGate) with confidence tiers: auto ≥80, prompt 55–79, skip <55
+- [x] Classifier output: isDecision, materiality (low/medium/high/critical), confidence, normalizedQuestion, alternatives, proposedOwner, proposedDeadline, rationale, gateVersion
+- [x] Immediate exclusions: questions, summaries, source retrieval, status checks, general research, drafting, simple comparisons
+- [x] Decision eligibility: require ≥3 of 5 signals (material choice, alternatives, consequences, owner, deadline)
+- [x] Add gate metadata columns to decision_rooms schema: gateConfidence, gateMateriality, gateRationale, gateVersion, roomSource, initiatedBy
+- [x] Persist gate metadata in every Decision Room record (confidence, materiality, rationale, version, source, initiatedBy)
+- [x] Add duplicate room detection (findSimilarDecisionRoom) before creating a new Decision Room
+- [x] Return gateResult in copilot.ask response so UI can show prompt-to-confirm for medium-confidence questions
+- [x] Remove force-reseed-remaining-rooms endpoint from deployed server
+- [x] Remove seed-remaining-decision-rooms and seed-decision-room endpoints from deployed server
+- [x] Remove dangling seed imports from server/_core/index.ts
+- [x] UI hierarchy: AI consensus shown with dashed border + italic (advisory) vs human decision with solid fill + bold (authoritative)
+- [x] Room list: show "Awaiting exec review" when no executive decision recorded
+- [x] Room detail header: separate "AI Consensus" and "Human Decision" columns with distinct visual treatment
+- [x] Executive decision section: binding decision shown with solid border + "Executive decision — binding" label
+- [x] Executive decision section: "Awaiting executive review" empty state with explanatory text
+- [x] Executive decision section: "Record decision" button hidden once decision is recorded
+- [x] consensusVerdict enum: go, conditional_go, hold, no_go, insufficient_evidence
+- [x] Seeded working hypotheses use consensusVerdict only; executiveDecision remains empty until human acts
+- [x] ctx.user available in copilot.ask mutation (destructured from handler args)

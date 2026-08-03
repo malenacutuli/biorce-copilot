@@ -33,9 +33,9 @@ type AgentPosition = {
 };
 type Room = {
   id: number; title: string; question: string; status: string;
-  consensusScore?: number | null; executiveDecision?: string | null;
+  consensusScore?: number | null; consensusVerdict?: string | null; executiveDecision?: string | null;
   executiveNotes?: string | null; decisionOwner?: string | null;
-  decisionDeadline?: Date | null; createdAt: Date;
+  decisionDeadline?: Date | null; decisionMadeAt?: Date | null; createdAt: Date;
   agentPositions?: AgentPosition[] | null;
   synthesisText?: string | null; recommendedAction?: string | null;
   requiredConditions?: string[] | null; principalRisk?: string | null;
@@ -101,7 +101,6 @@ function RoomList({ onSelect }: { onSelect: (id: number) => void }) {
   return (
     <div className="flex flex-col gap-3">
       {rooms.map(r => {
-        const decColor = DECISION_COLORS[r.executiveDecision ?? "pending"];
         return (
           <button key={r.id} onClick={() => onSelect(r.id)}
             className="rounded-xl border p-5 text-left flex items-start gap-4 transition-all duration-150 hover:shadow-md hover:-translate-y-0.5 w-full"
@@ -119,10 +118,32 @@ function RoomList({ onSelect }: { onSelect: (id: number) => void }) {
                     {r.consensusScore}% consensus
                   </span>
                 )}
-                <Badge className="text-[10px] capitalize"
-                  style={{ background: `${decColor}18`, color: decColor, border: `1px solid ${decColor}35` }}>
-                  {(r.executiveDecision ?? "pending").replace(/_/g, " ")}
-                </Badge>
+                {r.consensusVerdict && (() => {
+                  const cv = r.consensusVerdict;
+                  const cvColor = cv === "go" ? "#10b981" : cv === "conditional_go" ? "#f59e0b" : cv === "hold" ? "#6b7280" : cv === "no_go" ? "#ef4444" : cv === "insufficient_evidence" ? "#8b5cf6" : "#6b7280";
+                  return (
+                    <span className="flex items-center gap-1">
+                      <span className="text-[9px] font-semibold uppercase tracking-wide" style={{ color: "var(--color-muted-foreground)" }}>AI</span>
+                      <Badge className="text-[10px] capitalize"
+                        style={{ background: `${cvColor}12`, color: cvColor, border: `1px dashed ${cvColor}50`, fontStyle: "italic" }}>
+                        {cv.replace(/_/g, " ")}
+                      </Badge>
+                    </span>
+                  );
+                })()}
+                {r.executiveDecision ? (
+                  <span className="flex items-center gap-1">
+                    <span className="text-[9px] font-semibold uppercase tracking-wide" style={{ color: "var(--color-muted-foreground)" }}>Exec</span>
+                    <Badge className="text-[10px] capitalize font-bold"
+                      style={{ background: DECISION_COLORS[r.executiveDecision] ?? "#6366f1", color: "white", border: "none" }}>
+                      {r.executiveDecision.replace(/_/g, " ")}
+                    </Badge>
+                  </span>
+                ) : (
+                  <span className="text-[10px]" style={{ color: "var(--color-muted-foreground)", fontStyle: "italic" }}>
+                    Awaiting exec review
+                  </span>
+                )}
                 <span className="text-xs" style={{ color: "var(--color-muted-foreground)" }}>
                   {new Date(r.createdAt).toLocaleDateString()}
                 </span>
@@ -201,10 +222,36 @@ function RoomDetail({ id, onBack }: { id: number; onBack: () => void }) {
             <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "#6366f1" }}>Decision Room</div>
             <h1 className="text-xl font-bold mb-2" style={{ color: "var(--color-foreground)" }}>{room.title}</h1>
           </div>
-          <Badge className="text-xs capitalize flex-shrink-0"
-            style={{ background: `${decColor}18`, color: decColor, border: `1px solid ${decColor}35` }}>
-            {(room.executiveDecision ?? "pending").replace(/_/g, " ")}
-          </Badge>
+          <div className="flex items-center gap-3 flex-shrink-0 flex-wrap justify-end">
+            {/* AI Consensus — advisory, dashed border, italic — clearly NOT a human decision */}
+            <div className="flex flex-col items-end gap-0.5">
+              <span className="text-[9px] font-semibold uppercase tracking-widest" style={{ color: "var(--color-muted-foreground)" }}>AI Consensus</span>
+              {room.consensusVerdict ? (() => {
+                const cv = room.consensusVerdict!;
+                const cvColor = cv === "go" ? "#10b981" : cv === "conditional_go" ? "#f59e0b" : cv === "hold" ? "#6b7280" : cv === "no_go" ? "#ef4444" : cv === "insufficient_evidence" ? "#8b5cf6" : "#6b7280";
+                return (
+                  <Badge className="text-xs capitalize"
+                    style={{ background: `${cvColor}12`, color: cvColor, border: `1px dashed ${cvColor}60`, fontStyle: "italic" }}>
+                    {cv.replace(/_/g, " ")}
+                  </Badge>
+                );
+              })() : (
+                <span className="text-xs" style={{ color: "var(--color-muted-foreground)", fontStyle: "italic" }}>Deliberating</span>
+              )}
+            </div>
+            {/* Human Decision — authoritative, solid fill, bold — strongest visual authority */}
+            <div className="flex flex-col items-end gap-0.5">
+              <span className="text-[9px] font-semibold uppercase tracking-widest" style={{ color: "var(--color-muted-foreground)" }}>Human Decision</span>
+              {room.executiveDecision ? (
+                <Badge className="text-xs capitalize font-bold"
+                  style={{ background: decColor, color: "white", border: "none", boxShadow: `0 0 0 2px ${decColor}40` }}>
+                  {room.executiveDecision.replace(/_/g, " ")}
+                </Badge>
+              ) : (
+                <span className="text-xs" style={{ color: "var(--color-muted-foreground)", fontStyle: "italic" }}>Awaiting executive review</span>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* 5 questions */}
@@ -301,8 +348,17 @@ function RoomDetail({ id, onBack }: { id: number; onBack: () => void }) {
       {/* ── Approval controls ── */}
       <div className="rounded-2xl border p-5" style={{ background: "var(--color-card)", borderColor: "var(--color-border)" }}>
         <div className="flex items-center justify-between mb-4">
-          <div className="font-semibold text-sm" style={{ color: "var(--color-foreground)" }}>Executive Decision</div>
-          {!showApproval && (
+          <div>
+            <div className="font-semibold text-sm" style={{ color: "var(--color-foreground)" }}>Executive Decision</div>
+            <div className="text-[10px] mt-0.5" style={{ color: "var(--color-muted-foreground)" }}>
+              {room.executiveDecision
+                ? "Decision recorded — binding"
+                : room.consensusVerdict
+                  ? "AI consensus reached — awaiting executive review"
+                  : "Deliberation in progress"}
+            </div>
+          </div>
+          {!showApproval && !room.executiveDecision && (
             <Button size="sm" variant="outline" onClick={() => setShowApproval(true)}>
               <Gavel className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.25} />
               Record decision
@@ -352,15 +408,37 @@ function RoomDetail({ id, onBack }: { id: number; onBack: () => void }) {
             </div>
           </div>
         ) : room.executiveDecision ? (
-          <div className="flex items-center gap-3 text-sm">
-            <Badge style={{ background: `${decColor}18`, color: decColor, border: `1px solid ${decColor}35` }}>
-              {room.executiveDecision.replace(/_/g, " ")}
-            </Badge>
-            {room.decisionOwner && <span style={{ color: "var(--color-muted-foreground)" }}>Owner: {room.decisionOwner}</span>}
-            {room.executiveNotes && <span style={{ color: "var(--color-muted-foreground)" }}>{room.executiveNotes}</span>}
+          <div className="rounded-xl p-4" style={{ background: `${decColor}10`, border: `2px solid ${decColor}` }}>
+            <div className="flex items-center gap-3 mb-2">
+              <Badge className="text-sm font-bold capitalize"
+                style={{ background: decColor, color: "white", border: "none", boxShadow: `0 0 0 2px ${decColor}40` }}>
+                {room.executiveDecision.replace(/_/g, " ")}
+              </Badge>
+              {room.decisionOwner && (
+                <span className="text-xs font-medium" style={{ color: "var(--color-foreground)" }}>
+                  Owner: {room.decisionOwner}
+                </span>
+              )}
+              {room.decisionMadeAt && (
+                <span className="text-xs" style={{ color: "var(--color-muted-foreground)" }}>
+                  {new Date(room.decisionMadeAt).toLocaleDateString()}
+                </span>
+              )}
+            </div>
+            {room.executiveNotes && (
+              <div className="text-sm" style={{ color: "var(--color-foreground)" }}>{room.executiveNotes}</div>
+            )}
+            <div className="mt-2 text-[10px] font-semibold uppercase tracking-wider" style={{ color: decColor }}>
+              Executive decision — binding
+            </div>
           </div>
         ) : (
-          <div className="text-sm" style={{ color: "var(--color-muted-foreground)" }}>No executive decision recorded yet.</div>
+          <div className="rounded-xl p-4" style={{ background: "var(--color-muted)", border: "1px dashed var(--color-border)" }}>
+            <div className="text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>Awaiting executive review</div>
+            <div className="text-xs" style={{ color: "var(--color-muted-foreground)" }}>
+              AI consensus is a working hypothesis. An authorized executive must record the binding decision.
+            </div>
+          </div>
         )}
       </div>
 

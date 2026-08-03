@@ -422,6 +422,8 @@ export const decisionRooms = mysqlTable("decision_rooms", {
   resolvedConflicts: json("resolvedConflicts").$type<string[]>().default([]),
   agentsInvoked: json("agentsInvoked").$type<string[]>().default([]),
   debateRounds: int("debateRounds").default(0),
+  // Agent consensus verdict (AI recommendation — separate from human executive decision)
+  consensusVerdict: mysqlEnum("consensusVerdict", ["go", "conditional_go", "hold", "no_go", "insufficient_evidence"]),
   // Executive decision
   executiveDecision: mysqlEnum("executiveDecision", ["approved", "modified", "rejected", "more_evidence"]),
   executiveNotes: text("executiveNotes"),
@@ -434,6 +436,13 @@ export const decisionRooms = mysqlTable("decision_rooms", {
   actualOutcome: text("actualOutcome"),
   outcomeRecordedAt: timestamp("outcomeRecordedAt"),
   outcomeAccuracy: int("outcomeAccuracy"),          // 0-100, filled after outcome
+  // Decision Room creation gate metadata
+  gateConfidence: int("gateConfidence"),             // 0-100 gate classifier confidence
+  gateMateriality: mysqlEnum("gateMateriality", ["low", "medium", "high", "critical"]),
+  gateRationale: text("gateRationale"),              // Why the gate classified this as a decision
+  gateVersion: varchar("gateVersion", { length: 32 }).default("v1"),
+  roomSource: mysqlEnum("roomSource", ["auto", "user_confirmed", "seeded", "api"]).default("auto"),
+  initiatedBy: varchar("initiatedBy", { length: 256 }), // openId of the user who asked the question
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -560,3 +569,45 @@ export const outcomeLearning = mysqlTable("outcome_learning", {
 });
 export type OutcomeLearning = typeof outcomeLearning.$inferSelect;
 export type InsertOutcomeLearning = typeof outcomeLearning.$inferInsert;
+
+// ─── Job Executions ───────────────────────────────────────────────────────────
+// Operational log for every scheduled job run. Provides idempotency, concurrency
+// locking, retry tracking, duration, records I/O, and human escalation state.
+export const jobExecutions = mysqlTable("job_executions", {
+  id: int("id").autoincrement().primaryKey(),
+  // Identity
+  jobName: varchar("jobName", { length: 128 }).notNull(),   // e.g. "daily-partnership-pulse"
+  taskUid: varchar("taskUid", { length: 128 }),             // Heartbeat taskUid
+  // Idempotency: one record per job per calendar date (UTC). Prevents duplicate runs.
+  idempotencyKey: varchar("idempotencyKey", { length: 256 }).notNull().unique(), // e.g. "daily-partnership-pulse:2026-08-04"
+  // Concurrency lock: set to true when job starts, false when done.
+  inFlight: boolean("inFlight").default(false).notNull(),
+  // Lock lease: if inFlight=true and lockExpiresAt < NOW(), the lock is stale and can be reclaimed.
+  lockExpiresAt: timestamp("lockExpiresAt"),
+  // Retry linkage: if this is a retry attempt, points to the original execution record.
+  parentExecutionId: int("parentExecutionId"),
+  // Lifecycle
+  status: mysqlEnum("status", ["running", "success", "failed", "skipped"]).notNull().default("running"),
+  startedAt: timestamp("startedAt").defaultNow().notNull(),
+  completedAt: timestamp("completedAt"),
+  durationMs: int("durationMs"),
+  // Payload counts
+  recordsRead: int("recordsRead").default(0),
+  recordsWritten: int("recordsWritten").default(0),
+  alertsCreated: int("alertsCreated").default(0),
+  // Retry tracking
+  attemptNumber: int("attemptNumber").default(1).notNull(),
+  maxAttempts: int("maxAttempts").default(3).notNull(),
+  // Failure detail
+  errorMessage: text("errorMessage"),
+  errorStack: text("errorStack"),
+  // Escalation
+  escalated: boolean("escalated").default(false).notNull(),
+  escalationNote: text("escalationNote"),
+  // Audit
+  triggeredBy: varchar("triggeredBy", { length: 64 }).default("cron").notNull(), // "cron" | "manual:<userId>"
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type JobExecution = typeof jobExecutions.$inferSelect;
+export type InsertJobExecution = typeof jobExecutions.$inferInsert;

@@ -89,17 +89,10 @@ async function startServer() {
       res.status(500).json({ error: e.message });
     }
   });
-  app.post("/api/internal/seed-decision-room", async (req, res) => {
-    if (req.headers['x-internal-seed'] !== 'biorce-seed-2026') {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
-    try {
-      const result = await seedNovoNordiskDecisionRoom();
-      res.json(result);
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
-  });
+  // seed-decision-room endpoint removed — use authenticated one-off script for seeding
+  // force-reseed-remaining-rooms endpoint removed — use authenticated one-off script for reseeding
+
+  // seed-remaining-decision-rooms endpoint removed — use authenticated one-off script for seeding
   // tRPC API
   app.use(
     "/api/trpc",
@@ -127,4 +120,4 @@ async function startServer() {
 }
 
 startServer().catch(console.error);
-import { seedNovoNordiskDecisionRoom } from "../seedDecisionRoom";
+// Seed imports removed — seed functions remain in seedDecisionRoom.ts and seedRemainingDecisionRooms.ts for use in one-off scripts only

@@ -1,0 +1,1 @@
+ALTER TABLE `decision_rooms` ADD `consensusVerdict` enum('go','conditional_go','hold','no_go','insufficient_evidence');

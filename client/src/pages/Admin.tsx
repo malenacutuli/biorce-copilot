@@ -1,51 +1,71 @@
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import { toast } from "sonner";
-import { Plus, TrendingUp, BookOpen, Users, Bot, Play, Clock, CheckCircle, AlertCircle, ToggleLeft, ToggleRight, RefreshCw } from "lucide-react";
+import { Plus, TrendingUp, BookOpen, Users, Bot, Play, Clock, CheckCircle, AlertCircle, ToggleLeft, ToggleRight, RefreshCw, ChevronDown, ChevronUp, XCircle, Loader2 } from "lucide-react";
 
 // ─── Agent Registry (mirrors langchainOrchestrator.ts) ───────────────────────
+// executionMode:
+//   "on_demand"       — participates in Copilot Q&A only; no background job
+//   "manual_enabled"  — wired to the audited server-side service; "Run Now" available
+//   "not_wired"       — registered in Heartbeat but direct trigger not yet connected to job runner
 const AGENT_REGISTRY = [
-  { id: "regulatory_watch",    name: "Regulatory Watch Agent",       domain: "regulatory",    schedule: "Daily 07:00 UTC",   path: "/api/scheduled/agent-regulatory-watch",    color: "text-blue-400" },
-  { id: "competitive_intel",   name: "Competitive Intelligence Agent", domain: "competitive", schedule: "Daily 07:30 UTC",   path: "/api/scheduled/agent-competitive-intel",   color: "text-orange-400" },
-  { id: "partnership_pulse",   name: "Partnership Pulse Agent",      domain: "partnerships",  schedule: "Daily 08:00 UTC",   path: "/api/scheduled/daily-partnership-pulse",   color: "text-purple-400" },
-  { id: "pharma_signal",       name: "Pharma Signal Engine",         domain: "pharma",        schedule: "Daily 08:30 UTC",   path: "/api/scheduled/agent-pharma-signal",       color: "text-green-400" },
-  { id: "opportunity_agent",   name: "Opportunity Agent",            domain: "opportunity",   schedule: "Daily 09:00 UTC",   path: "/api/scheduled/agent-opportunity",          color: "text-yellow-400" },
-  { id: "contradiction_agent", name: "Contradiction Agent",          domain: "contradictions", schedule: "Daily 09:30 UTC",  path: "/api/scheduled/agent-contradiction",        color: "text-red-400" },
-  { id: "strategy_execution",  name: "Strategy Execution Agent",     domain: "execution",     schedule: "Daily 10:00 UTC",   path: "/api/scheduled/agent-strategy-execution",  color: "text-cyan-400" },
-  { id: "claims_guardian",     name: "Claims Guardian",              domain: "claims",        schedule: "Mon 09:30 UTC",     path: "/api/scheduled/agent-claims-guardian",     color: "text-pink-400" },
-  { id: "vision_consistency",  name: "Vision Consistency Agent",     domain: "vision",        schedule: "Mon 10:00 UTC",     path: "/api/scheduled/agent-vision-consistency",  color: "text-indigo-400" },
-  { id: "scientific_evidence", name: "Scientific Evidence Agent",    domain: "science",       schedule: "Tue 08:00 UTC",     path: "/api/scheduled/agent-scientific-evidence", color: "text-teal-400" },
-  { id: "standards_watch",     name: "Standards Watch Agent",        domain: "standards",     schedule: "Wed 08:00 UTC",     path: "/api/scheduled/agent-standards-watch",     color: "text-lime-400" },
-  { id: "weekly_digest",       name: "Weekly Intelligence Digest",   domain: "digest",        schedule: "Mon 09:00 UTC",     path: "/api/scheduled/weekly-digest",             color: "text-amber-400" },
-  { id: "board_intelligence",  name: "Board Intelligence Agent",     domain: "board",         schedule: "1st of month 08:00 UTC", path: "/api/scheduled/agent-board-intelligence", color: "text-rose-400" },
+  { id: "regulatory_watch",    name: "Regulatory Watch Agent",         domain: "regulatory",     schedule: "Daily 07:00 UTC",        executionMode: "not_wired"      as const, color: "text-blue-400" },
+  { id: "competitive_intel",   name: "Competitive Intelligence Agent", domain: "competitive",    schedule: "Daily 07:30 UTC",        executionMode: "not_wired"      as const, color: "text-orange-400" },
+  { id: "partnership_pulse",   name: "Partnership Pulse Agent",        domain: "partnerships",   schedule: "Daily 08:00 UTC",        executionMode: "manual_enabled" as const, color: "text-purple-400" },
+  { id: "pharma_signal",       name: "Pharma Signal Engine",           domain: "pharma",         schedule: "Daily 08:30 UTC",        executionMode: "not_wired"      as const, color: "text-green-400" },
+  { id: "opportunity_agent",   name: "Opportunity Agent",              domain: "opportunity",    schedule: "Daily 09:00 UTC",        executionMode: "not_wired"      as const, color: "text-yellow-400" },
+  { id: "contradiction_agent", name: "Contradiction Agent",            domain: "contradictions", schedule: "Daily 09:30 UTC",        executionMode: "on_demand"      as const, color: "text-red-400" },
+  { id: "strategy_execution",  name: "Strategy Execution Agent",       domain: "execution",      schedule: "Daily 10:00 UTC",        executionMode: "not_wired"      as const, color: "text-cyan-400" },
+  { id: "claims_guardian",     name: "Claims Guardian",                domain: "claims",         schedule: "Mon 09:30 UTC",          executionMode: "on_demand"      as const, color: "text-pink-400" },
+  { id: "vision_consistency",  name: "Vision Consistency Agent",       domain: "vision",         schedule: "Mon 10:00 UTC",          executionMode: "not_wired"      as const, color: "text-indigo-400" },
+  { id: "scientific_evidence", name: "Scientific Evidence Agent",      domain: "science",        schedule: "Tue 08:00 UTC",          executionMode: "on_demand"      as const, color: "text-teal-400" },
+  { id: "standards_watch",     name: "Standards Watch Agent",          domain: "standards",      schedule: "Wed 08:00 UTC",          executionMode: "not_wired"      as const, color: "text-lime-400" },
+  { id: "weekly_digest",       name: "Weekly Intelligence Digest",     domain: "digest",         schedule: "Mon 09:00 UTC",          executionMode: "not_wired"      as const, color: "text-amber-400" },
+  { id: "board_intelligence",  name: "Board Intelligence Agent",       domain: "board",          schedule: "1st of month 08:00 UTC", executionMode: "not_wired"      as const, color: "text-rose-400" },
 ] as const;
+
+const EXECUTION_MODE_BADGE = {
+  on_demand:      { label: "On Demand",            cls: "bg-blue-500/10 text-blue-400 border-blue-500/20",       title: "Participates in Copilot Q&A reasoning. No background automation." },
+  manual_enabled: { label: "Manual Run Enabled",   cls: "bg-purple-500/10 text-purple-400 border-purple-500/20", title: "Wired to the audited server-side job runner. Use Run Now to trigger." },
+  not_wired:      { label: "Automation Not Wired", cls: "bg-muted/50 text-muted-foreground border-border",       title: "Registered in Heartbeat but direct trigger is not yet connected to the audited job runner." },
+} as const;
 
 function AgentsPanel() {
   const [triggering, setTriggering] = useState<string | null>(null);
   const [results, setResults] = useState<Record<string, { ok: boolean; message: string }>>({});
   const triggerMutation = trpc.scheduledAgents.triggerJob.useMutation({
     onSuccess: (data, variables) => {
-      const agentId = variables.path.split("/").pop() ?? variables.path;
-      setResults(prev => ({
-        ...prev,
-        [agentId]: { ok: data.ok, message: data.ok ? "Triggered successfully" : `Error: ${JSON.stringify(data.body)}` },
-      }));
-      toast[data.ok ? "success" : "error"](data.ok ? "Agent triggered successfully" : "Agent trigger failed");
+      const agentId = variables.jobName;
+      const skipped = (data as any).skipped;
+      const msg = skipped
+        ? `Skipped: ${(data as any).reason ?? "already ran today"}`
+        : data.ok
+        ? `Done — ${(data as any).staleCount ?? 0} stale, ${(data as any).alertsCreated ?? 0} alert(s)`
+        : "Trigger failed";
+      setResults(prev => ({ ...prev, [agentId]: { ok: !!data.ok, message: msg } }));
+      toast[data.ok ? "success" : "error"](msg);
       setTriggering(null);
     },
     onError: (err, variables) => {
-      const agentId = variables.path.split("/").pop() ?? variables.path;
+      const agentId = variables.jobName;
       setResults(prev => ({ ...prev, [agentId]: { ok: false, message: err.message } }));
       toast.error(`Agent trigger failed: ${err.message}`);
       setTriggering(null);
     },
   });
 
-  function handleTrigger(path: string) {
-    const agentId = path.split("/").pop() ?? path;
-    setTriggering(agentId);
-    triggerMutation.mutate({ path });
+  function handleTrigger(agent: typeof AGENT_REGISTRY[number]) {
+    if (agent.executionMode !== "manual_enabled") {
+      if (agent.executionMode === "on_demand") {
+        toast.info(`${agent.name} participates in Copilot Q&A reasoning but has no background automation.`);
+      } else {
+        toast.info("Manual execution is not yet connected to the audited job runner.");
+      }
+      return;
+    }
+    setTriggering(agent.id);
+    triggerMutation.mutate({ jobName: "daily-partnership-pulse", force: false });
   }
 
   return (
@@ -56,13 +76,15 @@ function AgentsPanel() {
         <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">13 agents live</span>
       </div>
       <p className="text-xs mb-4" style={{ color: "var(--color-muted-foreground)" }}>
-        All agents run on live cron schedules via Heartbeat. Each uses the LangChain orchestrator: structured prompt → ChatOpenAI → JSON output with confidence scoring, citations, and retry logic. Use "Run Now" to trigger any agent manually.
+        Agents serve three roles: <strong>On Demand</strong> — available in Copilot Q&amp;A; <strong>Automation Not Wired</strong> — registered in Heartbeat but manual trigger not yet connected to the audited job runner; <strong>Manual Run Enabled</strong> — wired end-to-end and safe to trigger directly.
       </p>
       <div className="grid gap-2">
         {AGENT_REGISTRY.map(agent => {
-          const agentId = agent.path.split("/").pop() ?? agent.id;
+          const agentId = agent.id;
           const result = results[agentId];
           const isTriggering = triggering === agentId;
+          const badge = EXECUTION_MODE_BADGE[agent.executionMode];
+          const isWired = agent.executionMode === "manual_enabled";
           return (
             <div key={agent.id} className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-accent/30 transition-colors">
               <div className={`w-2 h-2 rounded-full bg-current flex-shrink-0 ${agent.color}`} />
@@ -70,6 +92,7 @@ function AgentsPanel() {
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-medium truncate" style={{ color: "var(--color-foreground)" }}>{agent.name}</span>
                   <span className="text-xs px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground flex-shrink-0">{agent.domain}</span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded border flex-shrink-0 ${badge.cls}`} title={badge.title}>{badge.label}</span>
                 </div>
                 <div className="flex items-center gap-1 mt-0.5">
                   <Clock size={10} className="text-muted-foreground flex-shrink-0" />
@@ -83,8 +106,9 @@ function AgentsPanel() {
                 </div>
               </div>
               <button
-                onClick={() => handleTrigger(agent.path)}
+                onClick={() => handleTrigger(agent)}
                 disabled={isTriggering}
+                title={isWired ? "Run now (admin only)" : badge.title}
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border border-border hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
                 style={{ color: "var(--color-foreground)" }}
               >
@@ -340,19 +364,148 @@ function PartnerForm() {
   );
 }
 
-function ScheduledJobsPanel() {
-  const { data: jobs, isLoading, refetch } = trpc.scheduledAgents.listJobs.useQuery();
+function ExecutionHistoryDrawer({ jobName, onClose }: { jobName: string; onClose: () => void }) {
+  const { data: execs, isLoading } = trpc.scheduledAgents.listExecutions.useQuery({ jobName, limit: 10 });
+
+  function fmtDate(d: any) {
+    if (!d) return "—";
+    return new Date(d).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+  function fmtDuration(ms: number | null | undefined) {
+    if (!ms) return "—";
+    return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
+  }
+
+  const statusIcon = (s: string) => {
+    if (s === "success") return <CheckCircle size={12} className="text-green-400" />;
+    if (s === "running") return <Loader2 size={12} className="text-blue-400 animate-spin" />;
+    if (s === "failed") return <XCircle size={12} className="text-red-400" />;
+    return <AlertCircle size={12} className="text-muted-foreground" />;
+  };
+
+  return (
+    <div className="mt-2 p-3 rounded-lg border border-border bg-background/50">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-medium" style={{ color: "var(--color-foreground)" }}>Execution History — {jobName}</span>
+        <button onClick={onClose} className="text-xs text-muted-foreground hover:text-foreground">✕</button>
+      </div>
+      {isLoading ? (
+        <p className="text-xs text-muted-foreground">Loading…</p>
+      ) : !execs || execs.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No executions recorded yet. Trigger a run to see history.</p>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          {execs.map((ex: any) => (
+            <div key={ex.id} className="text-xs grid grid-cols-[16px_1fr] gap-x-2 gap-y-0.5 items-start">
+              <div className="mt-0.5">{statusIcon(ex.status)}</div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium" style={{ color: "var(--color-foreground)" }}>{fmtDate(ex.startedAt)}</span>
+                  <span className="text-muted-foreground">·</span>
+                  <span className="text-muted-foreground">{fmtDuration(ex.durationMs)}</span>
+                  <span className="text-muted-foreground">·</span>
+                  <span className="text-muted-foreground">read {ex.recordsRead ?? 0} / wrote {ex.recordsWritten ?? 0} / alerts {ex.alertsCreated ?? 0}</span>
+                  {ex.triggeredBy !== "cron" && (
+                    <span className="px-1 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">{ex.triggeredBy}</span>
+                  )}
+                  {ex.escalated && (
+                    <span className="px-1 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20">escalated</span>
+                  )}
+                </div>
+                {ex.errorMessage && (
+                  <p className="text-red-400 mt-0.5 truncate" title={ex.errorMessage}>{ex.errorMessage}</p>
+                )}
+                {ex.escalationNote && (
+                  <p className="text-orange-400 mt-0.5">{ex.escalationNote}</p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScheduledJobRow({ job, latestExec }: { job: any; latestExec: any }) {
+  const [open, setOpen] = useState(false);
   const toggleMut = trpc.scheduledAgents.toggleJob.useMutation({
-    onSuccess: (_, vars) => {
-      toast.success(vars.enable ? "Job enabled" : "Job paused");
-      refetch();
-    },
+    onSuccess: (_, vars) => toast.success(vars.enable ? "Job enabled" : "Job paused"),
     onError: (err) => toast.error(`Toggle failed: ${err.message}`),
   });
 
-  function formatDate(iso: string | null | undefined) {
-    if (!iso) return "—";
-    return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  function fmtDate(d: any) {
+    if (!d) return "—";
+    return new Date(d).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+
+  const lastStatus = latestExec?.status;
+  const lastStatusIcon = lastStatus === "success" ? <CheckCircle size={11} className="text-green-400" />
+    : lastStatus === "failed" ? <XCircle size={11} className="text-red-400" />
+    : lastStatus === "running" ? <Loader2 size={11} className="text-blue-400 animate-spin" />
+    : null;
+
+  return (
+    <div className="rounded-lg border border-border hover:bg-accent/10 transition-colors">
+      <div className="flex items-start gap-3 p-3">
+        <div className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 ${job.isEnable ? "bg-green-400" : "bg-muted-foreground"}`} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-medium" style={{ color: "var(--color-foreground)" }}>{job.name}</span>
+            <span className={`text-xs px-1.5 py-0.5 rounded border ${job.isEnable ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-muted/50 text-muted-foreground border-border"}`}>
+              {job.isEnable ? "Active" : "Paused"}
+            </span>
+            {lastStatusIcon && (
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                {lastStatusIcon}
+                <span>Last run: {lastStatus}</span>
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-4 mt-1 flex-wrap">
+            <span className="text-xs text-muted-foreground"><span className="opacity-60">Cron:</span> {job.cronExpression}</span>
+            <span className="text-xs text-muted-foreground"><span className="opacity-60">Last:</span> {fmtDate(job.lastExecutedAt)}</span>
+            <span className="text-xs text-muted-foreground"><span className="opacity-60">Next:</span> {fmtDate(job.nextExecutionAt)}</span>
+            {latestExec?.durationMs && (
+              <span className="text-xs text-muted-foreground"><span className="opacity-60">Duration:</span> {latestExec.durationMs < 1000 ? `${latestExec.durationMs}ms` : `${(latestExec.durationMs / 1000).toFixed(1)}s`}</span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <button
+            onClick={() => setOpen(o => !o)}
+            className="p-1 rounded hover:bg-accent transition-colors"
+            title="Execution history"
+          >
+            {open ? <ChevronUp size={13} className="text-muted-foreground" /> : <ChevronDown size={13} className="text-muted-foreground" />}
+          </button>
+          <button
+            onClick={() => toggleMut.mutate({ taskUid: job.taskUid, enable: !job.isEnable })}
+            disabled={toggleMut.isPending}
+            className="flex items-center gap-1 px-2 py-1 rounded text-xs border border-border hover:bg-accent transition-colors disabled:opacity-50"
+            style={{ color: "var(--color-foreground)" }}
+            title={job.isEnable ? "Pause job" : "Enable job"}
+          >
+            {job.isEnable ? <ToggleRight size={14} className="text-green-400" /> : <ToggleLeft size={14} className="text-muted-foreground" />}
+            {job.isEnable ? "Pause" : "Enable"}
+          </button>
+        </div>
+      </div>
+      {open && <div className="px-3 pb-3"><ExecutionHistoryDrawer jobName={job.name} onClose={() => setOpen(false)} /></div>}
+    </div>
+  );
+}
+
+function ScheduledJobsPanel() {
+  const { data: jobs, isLoading, refetch } = trpc.scheduledAgents.listJobs.useQuery();
+  const { data: latestExecs } = trpc.scheduledAgents.latestExecutions.useQuery();
+
+  // Build a map from jobName → latest execution record
+  const execMap: Record<string, any> = {};
+  if (latestExecs) {
+    for (const ex of latestExecs as any[]) {
+      execMap[ex.jobName] = ex;
+    }
   }
 
   return (
@@ -360,52 +513,19 @@ function ScheduledJobsPanel() {
       <div className="flex items-center gap-2 mb-4">
         <Clock size={16} style={{ color: "var(--color-primary)" }} />
         <h2 className="text-sm font-semibold" style={{ color: "var(--color-foreground)" }}>Scheduled Jobs</h2>
+        <span className="text-xs text-muted-foreground ml-1">— registered and enabled does not mean working; check execution history</span>
         <button onClick={() => refetch()} className="ml-auto p-1 rounded hover:bg-accent transition-colors" title="Refresh">
           <RefreshCw size={12} style={{ color: "var(--color-muted-foreground)" }} />
         </button>
       </div>
       {isLoading ? (
-        <p className="text-xs" style={{ color: "var(--color-muted-foreground)" }}>Loading jobs…</p>
+        <p className="text-xs text-muted-foreground">Loading jobs…</p>
       ) : !jobs || jobs.length === 0 ? (
-        <p className="text-xs" style={{ color: "var(--color-muted-foreground)" }}>No scheduled jobs found.</p>
+        <p className="text-xs text-muted-foreground">No scheduled jobs found.</p>
       ) : (
         <div className="flex flex-col gap-2">
-          {jobs.map((job: any) => (
-            <div key={job.taskUid} className="flex items-start gap-3 p-3 rounded-lg border border-border hover:bg-accent/20 transition-colors">
-              <div className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 ${job.isEnable ? "bg-green-400" : "bg-muted-foreground"}`} />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-medium" style={{ color: "var(--color-foreground)" }}>{job.name}</span>
-                  <span className={`text-xs px-1.5 py-0.5 rounded ${job.isEnable ? "bg-green-500/10 text-green-400 border border-green-500/20" : "bg-muted/50 text-muted-foreground border border-border"}`}>
-                    {job.isEnable ? "Active" : "Paused"}
-                  </span>
-                </div>
-                {job.description && (
-                  <p className="text-xs mt-0.5 truncate" style={{ color: "var(--color-muted-foreground)" }}>{job.description}</p>
-                )}
-                <div className="flex items-center gap-4 mt-1 flex-wrap">
-                  <span className="text-xs" style={{ color: "var(--color-muted-foreground)" }}>
-                    <span className="opacity-60">Cron:</span> {job.cronExpression}
-                  </span>
-                  <span className="text-xs" style={{ color: "var(--color-muted-foreground)" }}>
-                    <span className="opacity-60">Last:</span> {formatDate(job.lastExecutedAt)}
-                  </span>
-                  <span className="text-xs" style={{ color: "var(--color-muted-foreground)" }}>
-                    <span className="opacity-60">Next:</span> {formatDate(job.nextExecutionAt)}
-                  </span>
-                </div>
-              </div>
-              <button
-                onClick={() => toggleMut.mutate({ taskUid: job.taskUid, enable: !job.isEnable })}
-                disabled={toggleMut.isPending}
-                className="flex items-center gap-1 px-2 py-1 rounded text-xs border border-border hover:bg-accent transition-colors disabled:opacity-50 flex-shrink-0"
-                style={{ color: "var(--color-foreground)" }}
-                title={job.isEnable ? "Pause job" : "Enable job"}
-              >
-                {job.isEnable ? <ToggleRight size={14} className="text-green-400" /> : <ToggleLeft size={14} className="text-muted-foreground" />}
-                {job.isEnable ? "Pause" : "Enable"}
-              </button>
-            </div>
+          {(jobs as any[]).map((job) => (
+            <ScheduledJobRow key={job.taskUid} job={job} latestExec={execMap[job.name]} />
           ))}
         </div>
       )}

@@ -43,6 +43,34 @@
       "when": 1785794757625,
       "tag": "0005_volatile_bloodaxe",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1785797890065,
+      "tag": "0006_charming_spitfire",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1785798553697,
+      "tag": "0007_slow_spencer_smythe",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1785799627039,
+      "tag": "0008_careless_loa",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1785800292317,
+      "tag": "0009_amusing_miss_america",
+      "breakpoints": true
     }
   ]
 }

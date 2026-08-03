@@ -568,6 +568,168 @@ export async function runSingleAgent(
   return runAgentChain(agent, context);
 }
 
+// ─── Decision Room Creation Gate ─────────────────────────────────────────────
+
+export type GateMateriality = "low" | "medium" | "high" | "critical";
+
+export interface DecisionGateResult {
+  isDecision: boolean;
+  materiality: GateMateriality;
+  confidence: number;           // 0-100
+  normalizedQuestion: string;
+  alternatives: string[];
+  proposedOwner: string | null;
+  proposedDeadline: string | null;
+  rationale: string;
+  signalsMatched: string[];
+  gateVersion: string;
+}
+
+/**
+ * Immediate exclusion patterns — these question types are NEVER Decision Rooms.
+ * Returns true if the question should be excluded.
+ */
+function isImmediateExclusion(q: string): boolean {
+  // "What is / What are / What does" — definitional questions
+  if (/^what\s+(is|are|does|do|was|were|has|have)\b/.test(q)) return true;
+  // "How does / How do / How can" — explanatory questions
+  if (/^how\s+(does|do|can|could|would|to)\b/.test(q)) return true;
+  // "Tell me about / Explain / Describe / Summarize / List / Give me"
+  if (/^(tell\s+me|explain|describe|summarize|summarise|list|give\s+me|show\s+me|find|search|look\s+up)\b/.test(q)) return true;
+  // "What happened / What is the status / What is the current"
+  if (/what\s+(happened|is\s+the\s+status|is\s+the\s+current|are\s+the\s+latest)\b/.test(q)) return true;
+  // Draft / write / rewrite / generate text
+  if (/\b(draft|write|rewrite|generate|create\s+a\s+(template|email|memo|brief|deck))\b/.test(q)) return true;
+  return false;
+}
+
+/**
+ * Full 5-signal structured classifier.
+ * Requires at least 3 of 5 signals for a Decision Room to be created.
+ *
+ * Confidence tiers:
+ *   >= 80 + materiality high/critical  → create automatically
+ *   55-79                              → return for user confirmation prompt
+ *   < 55                               → keep as normal Copilot conversation
+ */
+export function classifyDecisionGate(question: string): DecisionGateResult {
+  const GATE_VERSION = "v1.1";
+  const q = question.toLowerCase().trim();
+  const signalsMatched: string[] = [];
+  const alternatives: string[] = [];
+  let proposedOwner: string | null = null;
+  let proposedDeadline: string | null = null;
+
+  // ── Signal 1: Material choice or commitment ──────────────────────────────
+  const hasMaterialChoice = /\bshould\b|\bwhether\b|\bprioritize\b|\bchoose\b|\bdecide\b|\bselect\b|\bcommit\b|\bproceed\b/.test(q);
+  if (hasMaterialChoice) signalsMatched.push("material_choice");
+
+  // ── Signal 2: Two or more plausible alternatives ─────────────────────────
+  const altMatch = q.match(/\b(\w+(?:\s+\w+)?)\s+(?:or|vs\.?|versus)\s+(\w+(?:\s+\w+)?)/);
+  const hasAlternatives = /\bor\b|\bvs\b|\bversus\b|\balternative\b|\boption\b|\bbetween\b|\bcompare\b/.test(q);
+  if (hasAlternatives) {
+    signalsMatched.push("alternatives_present");
+    if (altMatch) {
+      alternatives.push(altMatch[1].trim(), altMatch[2].trim());
+    }
+  }
+
+  // ── Signal 3: Meaningful consequences ────────────────────────────────────
+  const hasConsequences = /\b(partner|invest|commit|sign|launch|approve|engage|pursue|revenue|contract|deal|agreement|regulatory|compliance|risk|liability|budget|headcount|roadmap)\b/.test(q);
+  if (hasConsequences) signalsMatched.push("meaningful_consequences");
+
+  // ── Signal 4: Identifiable decision owner ────────────────────────────────
+  const ownerMatch = q.match(/\b(pedro|malena|ceo|cto|coo|board|team|biorce|head\s+of\s+\w+)\b/);
+  if (ownerMatch) {
+    signalsMatched.push("decision_owner");
+    proposedOwner = ownerMatch[1];
+  }
+
+  // ── Signal 5: Decision deadline or triggering event ──────────────────────
+  const deadlineMatch = q.match(/\b(before|by|until|deadline|q[1-4]\s*\d{4}|august|september|october|november|december|january|\d{4}|next\s+\w+|this\s+\w+|within\s+\d+)\b/);
+  const hasTrigger = /\b(before|by|deadline|trigger|when|if\s+we|once|after|upon|following)\b/.test(q);
+  if (deadlineMatch || hasTrigger) {
+    signalsMatched.push("deadline_or_trigger");
+    if (deadlineMatch) proposedDeadline = deadlineMatch[1];
+  }
+
+  // ── Scoring ───────────────────────────────────────────────────────────────
+  const signalCount = signalsMatched.length;
+
+  // Immediate exclusion check
+  if (isImmediateExclusion(q)) {
+    return {
+      isDecision: false,
+      materiality: "low",
+      confidence: 0,
+      normalizedQuestion: question,
+      alternatives,
+      proposedOwner,
+      proposedDeadline,
+      rationale: "Excluded: definitional, explanatory, or drafting question — not a strategic decision.",
+      signalsMatched: [],
+      gateVersion: GATE_VERSION,
+    };
+  }
+
+  // Require at least 3 of 5 signals
+  if (signalCount < 3) {
+    return {
+      isDecision: false,
+      materiality: "low",
+      confidence: Math.min(40, signalCount * 15),
+      normalizedQuestion: question,
+      alternatives,
+      proposedOwner,
+      proposedDeadline,
+      rationale: `Only ${signalCount}/5 decision signals matched (${signalsMatched.join(", ") || "none"}). Minimum 3 required.`,
+      signalsMatched,
+      gateVersion: GATE_VERSION,
+    };
+  }
+
+  // Materiality scoring
+  let materiality: GateMateriality = "medium";
+  const criticalTerms = /\b(invest|commit|sign|contract|regulatory|compliance|series\s+b|fundraise|acquisition|merger|exclusivity|ip\s+rights|data\s+rights)\b/.test(q);
+  const highTerms = /\b(partner|launch|approve|pursue|proceed|engage|deal|agreement|budget|headcount)\b/.test(q);
+  if (criticalTerms) materiality = "critical";
+  else if (highTerms) materiality = "high";
+  else if (signalCount >= 4) materiality = "high";
+
+  // Confidence: base 50 + 10 per signal + materiality bonus
+  const materialityBonus = materiality === "critical" ? 20 : materiality === "high" ? 10 : 0;
+  const confidence = Math.min(95, 50 + (signalCount * 10) + materialityBonus);
+
+  const isDecision = confidence >= 55;
+
+  return {
+    isDecision,
+    materiality,
+    confidence,
+    normalizedQuestion: question,
+    alternatives,
+    proposedOwner,
+    proposedDeadline,
+    rationale: isDecision
+      ? `${signalCount}/5 signals matched: ${signalsMatched.join(", ")}. Materiality: ${materiality}.`
+      : `${signalCount}/5 signals matched but confidence ${confidence} below threshold (55).`,
+    signalsMatched,
+    gateVersion: GATE_VERSION,
+  };
+}
+
+/** Backward-compatible boolean helper used by the router for the auto-create path */
+export function shouldCreateDecisionRoom(question: string): boolean {
+  const result = classifyDecisionGate(question);
+  return result.isDecision && result.confidence >= 80 && (result.materiality === "high" || result.materiality === "critical");
+}
+
+/** Returns true when confidence is in the 55-79 range — caller should prompt user to confirm */
+export function shouldPromptDecisionRoom(question: string): boolean {
+  const result = classifyDecisionGate(question);
+  return result.isDecision && result.confidence >= 55 && result.confidence < 80;
+}
+
 // ─── DB Persistence Layer ─────────────────────────────────────────────────────
 /**
  * Persists a completed LangChain orchestration run as a Decision Room record.
@@ -578,7 +740,17 @@ export async function persistDecisionRoom(
   title: string,
   question: string,
   result: LangChainOrchestratorResult,
-  opts: { partnerId?: number; context?: string } = {}
+  opts: {
+    partnerId?: number;
+    context?: string;
+    gateConfidence?: number;
+    gateMateriality?: "low" | "medium" | "high" | "critical";
+    gateRationale?: string;
+    gateVersion?: string;
+    roomSource?: "auto" | "user_confirmed" | "seeded" | "api";
+    initiatedBy?: string;
+    existingRoomId?: number;  // if set, append to existing room instead of creating
+  } = {}
 ): Promise<number | null> {
   try {
     const {
@@ -587,24 +759,44 @@ export async function persistDecisionRoom(
       createClaimVote, createEvidenceEntry, createOutcomePrediction,
     } = await import("./db");
 
-    // 1. Create the decision room
-    const roomId = await createDecisionRoom({
-      title,
-      question,
-      context: opts.context ?? null,
-      partnerId: opts.partnerId ?? null,
-      status: "consensus_reached",
-      consensusScore: result.consensus.agreementScore,
-      recommendedAction: result.recommendedAction,
-      minorityReport: result.consensus.conflictingAgents.length > 0
-        ? `Dissenting agents: ${result.consensus.conflictingAgents.join(", ")}. Unresolved: ${result.contradictions.join("; ")}`
-        : null,
-      conflictingAgents: result.consensus.conflictingAgents as any,
-      resolvedConflicts: result.consensus.resolvedConflicts as any,
-      agentsInvoked: result.agentsInvoked as any,
-      debateRounds: result.debateRounds,
-      predictedOutcome: result.strategicImplication,
-    });
+    // 1. Create or append to an existing Decision Room
+    let roomId: number;
+    if (opts.existingRoomId) {
+      // Append: update the existing room with latest consensus data
+      await updateDecisionRoom(opts.existingRoomId, {
+        consensusScore: result.consensus.agreementScore,
+        recommendedAction: result.recommendedAction,
+        agentsInvoked: result.agentsInvoked as any,
+        debateRounds: result.debateRounds,
+      });
+      roomId = opts.existingRoomId;
+      console.log(`[LangChain] Appending to existing Decision Room #${roomId} (duplicate detected)`);
+    } else {
+      roomId = await createDecisionRoom({
+        title,
+        question,
+        context: opts.context ?? null,
+        partnerId: opts.partnerId ?? null,
+        status: "consensus_reached",
+        consensusScore: result.consensus.agreementScore,
+        recommendedAction: result.recommendedAction,
+        minorityReport: result.consensus.conflictingAgents.length > 0
+          ? `Dissenting agents: ${result.consensus.conflictingAgents.join(", ")}. Unresolved: ${result.contradictions.join("; ")}`
+          : null,
+        conflictingAgents: result.consensus.conflictingAgents as any,
+        resolvedConflicts: result.consensus.resolvedConflicts as any,
+        agentsInvoked: result.agentsInvoked as any,
+        debateRounds: result.debateRounds,
+        predictedOutcome: result.strategicImplication,
+        // Gate metadata
+        gateConfidence: opts.gateConfidence ?? null,
+        gateMateriality: opts.gateMateriality ?? null,
+        gateRationale: opts.gateRationale ?? null,
+        gateVersion: opts.gateVersion ?? "v1.1",
+        roomSource: opts.roomSource ?? "auto",
+        initiatedBy: opts.initiatedBy ?? null,
+      });
+    }
 
     // 2. Persist each agent finding as a claim (round 1 = independent findings)
     const claimIdMap: Record<string, number> = {};
