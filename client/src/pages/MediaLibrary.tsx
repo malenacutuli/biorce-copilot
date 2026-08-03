@@ -224,7 +224,7 @@ export default function MediaLibrary() {
     <AppLayout>
       {showUpload && <UploadModal onClose={() => setShowUpload(false)} onSuccess={refetch} />}
       <div className="flex h-full">
-        {/* Left panel — list */}
+        {/* Left panel - list */}
         <div className="w-80 flex-shrink-0 border-r flex flex-col" style={{ borderColor: "var(--color-border)" }}>
           <div className="p-4 border-b" style={{ borderColor: "var(--color-border)" }}>
             <div className="flex items-center justify-between mb-3">
@@ -301,7 +301,7 @@ export default function MediaLibrary() {
           </div>
         </div>
 
-        {/* Right panel — detail */}
+        {/* Right panel - detail */}
         <div className="flex-1 overflow-y-auto">
           {!selected && (
             <div className="flex flex-col items-center justify-center h-full gap-3">

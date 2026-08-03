@@ -30,7 +30,7 @@ export default function Alerts() {
           <div>
             <h1 className="text-base font-semibold" style={{ color: "var(--color-foreground)" }}>Alerts & Digests</h1>
             <p className="text-xs mt-0.5" style={{ color: "var(--color-muted-foreground)" }}>
-              Proactive intelligence updates — regulatory, competitive, and partnership
+              Proactive intelligence updates: regulatory, competitive, and partnership
               {unreadCount > 0 && <span className="ml-2 px-1.5 py-0.5 rounded-full text-xs font-medium" style={{ background: "var(--color-primary)", color: "var(--color-primary-foreground)" }}>{unreadCount} unread</span>}
             </p>
           </div>
@@ -90,7 +90,7 @@ export default function Alerts() {
                         ) : (
                           <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg"
                             style={{ background: "var(--color-accent)", color: "var(--color-muted-foreground)" }}>
-                            No source URL — add one to verify
+                            No source URL: add one to verify
                           </span>
                         )}
                       </div>

@@ -62,7 +62,7 @@ export default function KnowledgeGraph() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-base font-semibold" style={{ color: "var(--color-foreground)" }}>Knowledge Graph</h1>
-            <p className="text-xs mt-0.5" style={{ color: "var(--color-muted-foreground)" }}>Interactive relationship map — drag nodes to explore. Green = verified, amber = inferred.</p>
+            <p className="text-xs mt-0.5" style={{ color: "var(--color-muted-foreground)" }}>Interactive relationship map · drag nodes to explore. Green = verified, amber = inferred</p>
           </div>
         <div className="flex gap-3">
             <button onClick={() => setActiveFilter(null)}

@@ -445,7 +445,7 @@ export default function Copilot() {
                   Biorce Strategy Copilot
                 </h2>
                 <p className="text-sm mb-1" style={{ color: "var(--color-muted-foreground)" }}>
-                  13 specialist agents — regulatory, competitive, pharma signal, claims, vision, scientific,
+                  13 specialist agents: regulatory, competitive, pharma signal, claims, vision, scientific,
                   partnership, opportunity, contradiction, execution, board, standards, synthesis.
                 </p>
                 <p className="text-xs" style={{ color: "var(--color-muted-foreground)" }}>

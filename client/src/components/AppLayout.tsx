@@ -4,24 +4,23 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import {
   LayoutDashboard, Brain, BookOpen, AlertTriangle, GitCompare,
-  Handshake, Newspaper, Video, Plug, Settings, LogOut,
-  ChevronRight
+  Handshake, Newspaper, Video, Plug, Settings, LogOut
 } from "lucide-react";
 
 const navSections = [
   {
     label: "Intelligence",
     items: [
-      { href: "/", icon: LayoutDashboard, label: "Dashboard" },
-      { href: "/knowledge", icon: BookOpen, label: "Knowledge Base" },
-      { href: "/discrepancies", icon: GitCompare, label: "Discrepancy Detector" },
-      { href: "/alerts", icon: AlertTriangle, label: "Alerts & Digests" },
+      { href: "/",             icon: LayoutDashboard, label: "Dashboard" },
+      { href: "/knowledge",    icon: BookOpen,        label: "Knowledge Base" },
+      { href: "/discrepancies",icon: GitCompare,      label: "Discrepancy Detector" },
+      { href: "/alerts",       icon: AlertTriangle,   label: "Alerts & Digests" },
     ],
   },
   {
     label: "Content",
     items: [
-      { href: "/media", icon: Video, label: "Media Library" },
+      { href: "/media", icon: Video,     label: "Media Library" },
       { href: "/press", icon: Newspaper, label: "Press Room" },
     ],
   },
@@ -34,9 +33,9 @@ const navSections = [
   {
     label: "System",
     items: [
-      { href: "/copilot", icon: Brain, label: "AI Copilot" },
-      { href: "/connectors", icon: Plug, label: "Connectors" },
-      { href: "/admin", icon: Settings, label: "Admin Panel" },
+      { href: "/copilot",    icon: Brain,    label: "AI Copilot" },
+      { href: "/connectors", icon: Plug,     label: "Connectors" },
+      { href: "/admin",      icon: Settings, label: "Admin Panel" },
     ],
   },
 ];
@@ -53,19 +52,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "#080808" }}>
         <div className="flex flex-col items-center gap-4">
-          {/* Biorce logo mark — teal molecular dots */}
-          <svg width="40" height="40" viewBox="0 0 40 40" fill="none" className="animate-pulse">
-            <circle cx="20" cy="8"  r="4" fill="#4DD9D5" opacity="0.9"/>
-            <circle cx="32" cy="14" r="3" fill="#4DD9D5" opacity="0.7"/>
-            <circle cx="32" cy="26" r="4" fill="#4DD9D5" opacity="0.8"/>
-            <circle cx="20" cy="32" r="3" fill="#4DD9D5" opacity="0.6"/>
-            <circle cx="8"  cy="26" r="4" fill="#4DD9D5" opacity="0.9"/>
-            <circle cx="8"  cy="14" r="3" fill="#4DD9D5" opacity="0.7"/>
-            <circle cx="20" cy="20" r="5" fill="#4DD9D5"/>
-          </svg>
-          <span className="text-sm text-muted-foreground tracking-wide">Loading Biorce Copilot…</span>
+          <img
+            src="/manus-storage/biorce-logo_89f0f98d.jpg"
+            alt="Biorce"
+            className="h-8 opacity-60 animate-pulse"
+            style={{ objectFit: "contain" }}
+          />
+          <span className="text-xs" style={{ color: "#7A7A7A", fontFamily: "var(--font-sans)" }}>
+            Loading...
+          </span>
         </div>
       </div>
     );
@@ -74,37 +71,25 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (!isAuthenticated) return null;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      {/* ── Sidebar ────────────────────────────────────────────────── */}
+    <div className="flex h-screen overflow-hidden" style={{ background: "#080808" }}>
+      {/* Sidebar */}
       <aside
         className="w-56 flex-shrink-0 flex flex-col border-r"
-        style={{ background: "var(--color-sidebar)", borderColor: "var(--color-sidebar-border)" }}
+        style={{ background: "#0A0A0A", borderColor: "#1A1A1A" }}
       >
-        {/* Logo header */}
-        <div
-          className="px-4 py-4 border-b flex items-center gap-3"
-          style={{ borderColor: "var(--color-sidebar-border)" }}
-        >
-          {/* Biorce SVG logo mark */}
-          <svg width="28" height="28" viewBox="0 0 40 40" fill="none" className="flex-shrink-0">
-            <circle cx="20" cy="8"  r="4"   fill="#4DD9D5" opacity="0.95"/>
-            <circle cx="31" cy="14" r="3"   fill="#4DD9D5" opacity="0.75"/>
-            <circle cx="31" cy="26" r="3.5" fill="#4DD9D5" opacity="0.85"/>
-            <circle cx="20" cy="32" r="3"   fill="#4DD9D5" opacity="0.65"/>
-            <circle cx="9"  cy="26" r="3.5" fill="#4DD9D5" opacity="0.90"/>
-            <circle cx="9"  cy="14" r="3"   fill="#4DD9D5" opacity="0.70"/>
-            <circle cx="20" cy="20" r="4.5" fill="#4DD9D5"/>
-          </svg>
-          <div>
-            <div
-              className="text-sm font-semibold tracking-widest uppercase leading-tight"
-              style={{ fontFamily: "var(--font-heading)", color: "#F5F5F5", letterSpacing: "0.12em" }}
-            >
-              BIORCE
-            </div>
-            <div className="text-xs" style={{ color: "var(--color-sidebar-foreground)", opacity: 0.6 }}>
-              Copilot
-            </div>
+        {/* Logo */}
+        <div className="px-4 py-4 border-b" style={{ borderColor: "#1A1A1A" }}>
+          <img
+            src="/manus-storage/biorce-logo_89f0f98d.jpg"
+            alt="Biorce"
+            className="h-6"
+            style={{ objectFit: "contain", objectPosition: "left" }}
+          />
+          <div
+            className="mt-1 text-xs"
+            style={{ color: "#4DD9D5", opacity: 0.7, fontFamily: "var(--font-mono)", letterSpacing: "0.05em" }}
+          >
+            Copilot
           </div>
         </div>
 
@@ -113,8 +98,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {navSections.map((section) => (
             <div key={section.label}>
               <div
-                className="px-3 mb-1 text-xs font-semibold uppercase tracking-widest"
-                style={{ color: "var(--color-sidebar-foreground)", opacity: 0.4, fontSize: "10px" }}
+                className="px-3 mb-1 uppercase tracking-widest"
+                style={{ color: "#4A4A4A", fontSize: "9px", fontFamily: "var(--font-mono)", fontWeight: 500 }}
               >
                 {section.label}
               </div>
@@ -127,36 +112,48 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 return (
                   <Link key={href} href={href}>
                     <div
-                      className={`group flex items-center gap-2.5 px-3 py-2 rounded-md mb-0.5 cursor-pointer transition-all duration-150 ${
-                        isActive
-                          ? "nav-active"
-                          : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-md mb-0.5 cursor-pointer transition-all duration-150 ${
+                        isActive ? "nav-active" : ""
                       }`}
-                      style={
-                        isActive
-                          ? {}
-                          : { color: "var(--color-sidebar-foreground)" }
-                      }
+                      style={isActive ? {} : { color: "#888888" }}
+                      onMouseEnter={e => {
+                        if (!isActive) {
+                          (e.currentTarget as HTMLElement).style.color = "#F5F5F5";
+                          (e.currentTarget as HTMLElement).style.background = "#141414";
+                        }
+                      }}
+                      onMouseLeave={e => {
+                        if (!isActive) {
+                          (e.currentTarget as HTMLElement).style.color = "#888888";
+                          (e.currentTarget as HTMLElement).style.background = "";
+                        }
+                      }}
                     >
                       <Icon
                         className="w-3.5 h-3.5 flex-shrink-0"
+                        strokeWidth={1.5}
                         style={isActive ? { color: "#4DD9D5" } : {}}
                       />
-                      <span className="text-xs font-medium flex-1 leading-none">{label}</span>
+                      <span
+                        className="text-xs flex-1 leading-none"
+                        style={{ fontFamily: "var(--font-sans)", fontWeight: isActive ? 500 : 400 }}
+                      >
+                        {label}
+                      </span>
                       {badge != null && Number(badge) > 0 && (
                         <span
-                          className="text-xs px-1.5 py-0.5 rounded-full font-data"
                           style={{
-                            background:
-                              label === "Discrepancy Detector"
-                                ? "oklch(0.60 0.22 25 / 0.25)"
-                                : "oklch(0.82 0.12 186 / 0.20)",
-                            color:
-                              label === "Discrepancy Detector"
-                                ? "oklch(0.78 0.18 25)"
-                                : "#4DD9D5",
+                            background: label === "Discrepancy Detector"
+                              ? "oklch(0.60 0.22 25 / 0.2)"
+                              : "oklch(0.82 0.12 186 / 0.15)",
+                            color: label === "Discrepancy Detector"
+                              ? "oklch(0.78 0.18 25)"
+                              : "#4DD9D5",
                             fontSize: "10px",
                             fontWeight: 600,
+                            padding: "1px 5px",
+                            borderRadius: "4px",
+                            fontFamily: "var(--font-mono)",
                           }}
                         >
                           {badge}
@@ -171,23 +168,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </nav>
 
         {/* User footer */}
-        <div
-          className="px-3 py-3 border-t"
-          style={{ borderColor: "var(--color-sidebar-border)" }}
-        >
+        <div className="px-3 py-3 border-t" style={{ borderColor: "#1A1A1A" }}>
           <div
             className="flex items-center gap-2.5 px-2 py-2 rounded-md"
-            style={{ background: "oklch(0.10 0.000 0)" }}
+            style={{ background: "#111111" }}
           >
             <div
-              className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
-              style={{ background: "#4DD9D5", color: "#080808" }}
+              className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0"
+              style={{ background: "#4DD9D5", color: "#080808", fontFamily: "var(--font-sans)" }}
             >
               {user?.name?.charAt(0)?.toUpperCase() ?? "B"}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-xs font-medium truncate text-foreground">{user?.name ?? "User"}</div>
-              <div className="text-xs truncate" style={{ color: "var(--color-sidebar-foreground)", opacity: 0.5 }}>
+              <div className="text-xs font-medium truncate" style={{ color: "#F5F5F5" }}>
+                {user?.name ?? "User"}
+              </div>
+              <div className="truncate" style={{ color: "#555555", fontSize: "10px", fontFamily: "var(--font-mono)" }}>
                 {user?.role ?? "user"}
               </div>
             </div>
@@ -196,14 +192,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               className="opacity-40 hover:opacity-80 transition-opacity"
               title="Sign out"
             >
-              <LogOut className="w-3.5 h-3.5" style={{ color: "var(--color-sidebar-foreground)" }} />
+              <LogOut className="w-3.5 h-3.5" strokeWidth={1.5} style={{ color: "#888888" }} />
             </button>
           </div>
         </div>
       </aside>
 
-      {/* ── Main content ───────────────────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto bg-background">
+      {/* Main content */}
+      <main className="flex-1 overflow-y-auto" style={{ background: "#080808" }}>
         {children}
       </main>
     </div>

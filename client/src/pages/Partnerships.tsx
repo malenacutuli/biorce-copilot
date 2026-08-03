@@ -52,7 +52,7 @@ function ActivityLog({ partnerId }: { partnerId: number }) {
               <label className="text-xs mb-1 block" style={{ color: "var(--color-muted-foreground)" }}>Outcome</label>
               <select value={form.outcome} onChange={e => setForm(f => ({ ...f, outcome: e.target.value }))}
                 className="w-full text-xs px-2 py-1.5 rounded-lg border" style={{ background: "var(--color-card)", borderColor: "var(--color-border)", color: "var(--color-foreground)" }}>
-                {["","pending","positive","negative","no_response","meeting_booked","referred"].map(t => <option key={t} value={t}>{t || "—"}</option>)}
+                {["","pending","positive","negative","no_response","meeting_booked","referred"].map(t => <option key={t} value={t}>{t || "-"}</option>)}
               </select>
             </div>
           </div>

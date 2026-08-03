@@ -36,16 +36,16 @@ export default function Dashboard() {
         <div className="mb-8">
           <h1 className="text-2xl font-semibold mb-1" style={{ color: "var(--color-foreground)" }}>Strategy Dashboard</h1>
           <p className="text-sm" style={{ color: "var(--color-muted-foreground)" }}>
-            Biorce executive intelligence — {new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+            Biorce executive intelligence · {new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
           </p>
         </div>
 
         {/* KPI Grid */}
         <div className="grid grid-cols-4 gap-4 mb-8">
-          <KpiCard title="Knowledge Items" value={isLoading ? "—" : kpis?.knowledgeCount ?? 0} subtitle="Verified intelligence records" icon={BookOpen} color="var(--color-primary)" href="/knowledge" />
-          <KpiCard title="Open Discrepancies" value={isLoading ? "—" : kpis?.openDiscrepancies ?? 0} subtitle="Flags requiring review" icon={AlertTriangle} color="var(--color-critical)" href="/discrepancies" />
-          <KpiCard title="Unread Alerts" value={isLoading ? "—" : kpis?.unreadAlerts ?? 0} subtitle="Intelligence updates" icon={Bell} color="var(--color-high)" href="/alerts" />
-          <KpiCard title="Pipeline Targets" value={isLoading ? "—" : kpis?.pipelineTotal ?? 0} subtitle="Priority partnerships tracked" icon={Users} color="var(--color-success)" href="/partnerships" />
+          <KpiCard title="Knowledge Items" value={isLoading ? "-" : kpis?.knowledgeCount ?? 0} subtitle="Verified intelligence records" icon={BookOpen} color="var(--color-primary)" href="/knowledge" />
+          <KpiCard title="Open Discrepancies" value={isLoading ? "-" : kpis?.openDiscrepancies ?? 0} subtitle="Flags requiring review" icon={AlertTriangle} color="var(--color-critical)" href="/discrepancies" />
+          <KpiCard title="Unread Alerts" value={isLoading ? "-" : kpis?.unreadAlerts ?? 0} subtitle="Intelligence updates" icon={Bell} color="var(--color-high)" href="/alerts" />
+          <KpiCard title="Pipeline Targets" value={isLoading ? "-" : kpis?.pipelineTotal ?? 0} subtitle="Priority partnerships tracked" icon={Users} color="var(--color-success)" href="/partnerships" />
         </div>
 
         <div className="grid grid-cols-3 gap-6">
