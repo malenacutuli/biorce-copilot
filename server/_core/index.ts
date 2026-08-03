@@ -9,6 +9,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { weeklyDigestHandler } from "../scheduledHandlers";
+import { seedStrategicPartners, deduplicatePartners } from "../seedPartners";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -39,6 +40,30 @@ async function startServer() {
   registerOAuthRoutes(app);
   // Scheduled handlers (Heartbeat cron callbacks)
   app.post("/api/scheduled/weekly-digest", weeklyDigestHandler);
+  // Internal seed endpoint (localhost only, protected by secret header)
+  app.post("/api/internal/seed-partners", async (req, res) => {
+    if (req.headers['x-internal-seed'] !== 'biorce-seed-2026') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    try {
+      const result = await seedStrategicPartners();
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+  // Internal dedup endpoint
+  app.post("/api/internal/dedup-partners", async (req, res) => {
+    if (req.headers['x-internal-seed'] !== 'biorce-seed-2026') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    try {
+      const result = await deduplicatePartners();
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
   // tRPC API
   app.use(
     "/api/trpc",
