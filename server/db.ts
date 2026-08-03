@@ -1,4 +1,4 @@
-import { and, desc, eq, like, or, sql } from "drizzle-orm";
+import { and, desc, eq, like, lt, notInArray, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   Alert,
@@ -38,6 +38,14 @@ import {
   PartnerActivity, InsertPartnerActivity, partnerActivities,
   PartnerFlag, InsertPartnerFlag, partnerFlags,
   ConnectorConfig, InsertConnectorConfig, connectorConfigs,
+} from "../drizzle/schema";
+import {
+  DecisionRoom, InsertDecisionRoom, decisionRooms,
+  AgentClaim, InsertAgentClaim, agentClaims,
+  ClaimVote, InsertClaimVote, claimVotes,
+  EvidenceLedger, InsertEvidenceLedger, evidenceLedger,
+  PartnershipAsset, InsertPartnershipAsset, partnershipAssets,
+  OutcomeLearning, InsertOutcomeLearning, outcomeLearning,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -249,6 +257,39 @@ export async function countPartnersByStage() {
   return db.select({ stage: partners.stage, count: sql<number>`count(*)` }).from(partners).groupBy(partners.stage);
 }
 
+/**
+ * Returns partners in active pipeline stages that have had no activity logged
+ * in the last `staleDays` days (default 14). Excludes terminal stages.
+ */
+export async function getStalePartners(staleDays = 14) {
+  const db = await getDb();
+  if (!db) return [];
+  const cutoff = new Date(Date.now() - staleDays * 24 * 60 * 60 * 1000);
+  const terminalStages: Partner["stage"][] = ["closed_won", "closed_lost", "on_hold"];
+  // Partners not in terminal stages
+  const activePartners = await db
+    .select({ id: partners.id, name: partners.name, tier: partners.tier, stage: partners.stage, nextAction: partners.nextAction, updatedAt: partners.updatedAt })
+    .from(partners)
+    .where(notInArray(partners.stage, terminalStages));
+  if (activePartners.length === 0) return [];
+  // For each active partner, find the most recent activity
+  const stale: typeof activePartners = [];
+  for (const p of activePartners) {
+    const recentActivity = await db
+      .select({ loggedAt: partnerActivities.loggedAt })
+      .from(partnerActivities)
+      .where(eq(partnerActivities.partnerId, p.id))
+      .orderBy(desc(partnerActivities.loggedAt))
+      .limit(1);
+    const lastActivity = recentActivity[0]?.loggedAt ?? null;
+    // Stale if: no activity ever, OR last activity older than cutoff
+    if (!lastActivity || lastActivity < cutoff) {
+      stale.push(p);
+    }
+  }
+  return stale;
+}
+
 // ─── Discrepancy Detector ─────────────────────────────────────────────────────
 export async function getDiscrepancies(opts: { status?: string; severity?: string; limit?: number; }) {
   const db = await getDb();
@@ -277,6 +318,12 @@ export async function countOpenDiscrepancies() {
   if (!db) return 0;
   const result = await db.select({ count: sql<number>`count(*)` }).from(discrepancies).where(eq(discrepancies.status, "open"));
   return Number(result[0]?.count ?? 0);
+}
+
+export async function createDiscrepancy(data: Omit<Discrepancy, "id" | "createdAt" | "updatedAt" | "resolvedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.insert(discrepancies).values(data as any);
 }
 
 // ─── Alerts ───────────────────────────────────────────────────────────────────
@@ -615,4 +662,144 @@ export async function toggleConnector(id: number, isEnabled: boolean) {
   if (!db) throw new Error("DB unavailable");
   const { eq } = await import("drizzle-orm");
   await db.update(connectorConfigs).set({ isEnabled } as any).where(eq(connectorConfigs.id, id));
+}
+
+// ─── Decision Rooms ───────────────────────────────────────────────────────────
+export async function createDecisionRoom(data: Omit<InsertDecisionRoom, "id" | "createdAt" | "updatedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const [result] = await db.insert(decisionRooms).values(data as any);
+  return (result as any).insertId as number;
+}
+
+export async function getDecisionRooms(opts: { partnerId?: number; status?: string; limit?: number } = {}) {
+  const db = await getDb();
+  if (!db) return [];
+  const { eq, desc: descOp } = await import("drizzle-orm");
+  const q = db.select().from(decisionRooms).orderBy(descOp(decisionRooms.createdAt)).limit(opts.limit ?? 50);
+  return q;
+}
+
+export async function getDecisionRoomById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const { eq } = await import("drizzle-orm");
+  const rows = await db.select().from(decisionRooms).where(eq(decisionRooms.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function updateDecisionRoom(id: number, data: Partial<Omit<InsertDecisionRoom, "id" | "createdAt">>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { eq } = await import("drizzle-orm");
+  await db.update(decisionRooms).set(data as any).where(eq(decisionRooms.id, id));
+}
+
+// ─── Agent Claims ─────────────────────────────────────────────────────────────
+export async function createAgentClaim(data: Omit<InsertAgentClaim, "id" | "createdAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const [result] = await db.insert(agentClaims).values(data as any);
+  return (result as any).insertId as number;
+}
+
+export async function getAgentClaims(decisionRoomId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const { eq, asc } = await import("drizzle-orm");
+  return db.select().from(agentClaims).where(eq(agentClaims.decisionRoomId, decisionRoomId)).orderBy(asc(agentClaims.round), asc(agentClaims.createdAt));
+}
+
+export async function updateAgentClaimAdjudication(id: number, status: AgentClaim["adjudicationStatus"], support: number, oppose: number, abstain: number, insufficient: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { eq } = await import("drizzle-orm");
+  await db.update(agentClaims).set({ adjudicationStatus: status, voteSupport: support, voteOppose: oppose, voteAbstain: abstain, voteInsufficientEvidence: insufficient } as any).where(eq(agentClaims.id, id));
+}
+
+// ─── Claim Votes ─────────────────────────────────────────────────────────────
+export async function createClaimVote(data: Omit<InsertClaimVote, "id" | "createdAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.insert(claimVotes).values(data as any);
+}
+
+export async function getClaimVotes(claimId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const { eq } = await import("drizzle-orm");
+  return db.select().from(claimVotes).where(eq(claimVotes.claimId, claimId));
+}
+
+// ─── Evidence Ledger ──────────────────────────────────────────────────────────
+export async function createEvidenceEntry(data: Omit<InsertEvidenceLedger, "id" | "createdAt" | "retrievedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const [result] = await db.insert(evidenceLedger).values(data as any);
+  return (result as any).insertId as number;
+}
+
+export async function getEvidenceForClaim(claimId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const { eq } = await import("drizzle-orm");
+  return db.select().from(evidenceLedger).where(eq(evidenceLedger.claimId, claimId));
+}
+
+export async function getEvidenceForRoom(decisionRoomId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const { eq } = await import("drizzle-orm");
+  return db.select().from(evidenceLedger).where(eq(evidenceLedger.decisionRoomId, decisionRoomId));
+}
+
+// ─── Partnership Assets ───────────────────────────────────────────────────────
+export async function getPartnershipAssets() {
+  const db = await getDb();
+  if (!db) return [];
+  const { asc } = await import("drizzle-orm");
+  return db.select().from(partnershipAssets).orderBy(asc(partnershipAssets.assetType));
+}
+
+export async function upsertPartnershipAsset(data: Omit<InsertPartnershipAsset, "id" | "createdAt" | "updatedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { eq } = await import("drizzle-orm");
+  const existing = await db.select().from(partnershipAssets).where(eq(partnershipAssets.assetType, data.assetType)).limit(1);
+  if (existing.length > 0) {
+    await db.update(partnershipAssets).set(data as any).where(eq(partnershipAssets.id, existing[0].id));
+    return existing[0].id;
+  } else {
+    const [result] = await db.insert(partnershipAssets).values(data as any);
+    return (result as any).insertId as number;
+  }
+}
+
+export async function updatePartnershipAsset(id: number, data: Partial<Omit<InsertPartnershipAsset, "id" | "createdAt">>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { eq } = await import("drizzle-orm");
+  await db.update(partnershipAssets).set(data as any).where(eq(partnershipAssets.id, id));
+}
+
+// ─── Outcome Learning ─────────────────────────────────────────────────────────
+export async function createOutcomePrediction(data: Omit<InsertOutcomeLearning, "id" | "createdAt" | "updatedAt" | "predictedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const [result] = await db.insert(outcomeLearning).values(data as any);
+  return (result as any).insertId as number;
+}
+
+export async function recordActualOutcome(id: number, actualOutcome: string, accuracyScore: number, wrongAssumptions: string[], correctAssumptions: string[], learningNote: string) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { eq } = await import("drizzle-orm");
+  await db.update(outcomeLearning).set({ actualOutcome, actualRecordedAt: new Date(), accuracyScore, wrongAssumptions: wrongAssumptions as any, correctAssumptions: correctAssumptions as any, learningNote } as any).where(eq(outcomeLearning.id, id));
+}
+
+export async function getOutcomeLearning(opts: { partnerId?: number; agentId?: string; limit?: number } = {}) {
+  const db = await getDb();
+  if (!db) return [];
+  const { desc: descOp } = await import("drizzle-orm");
+  return db.select().from(outcomeLearning).orderBy(descOp(outcomeLearning.predictedAt)).limit(opts.limit ?? 50);
 }

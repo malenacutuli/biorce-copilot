@@ -404,3 +404,159 @@ export type InsertConnectorConfig = typeof connectorConfigs.$inferInsert;
 
 // ─── Extend alerts with sourceUrl for "open full source" ─────────────────────
 // (alerts table already exists — we add sourceUrl via migration SQL)
+
+// ─── Decision Rooms ───────────────────────────────────────────────────────────
+// A decision room is a structured multi-agent deliberation on a specific question.
+export const decisionRooms = mysqlTable("decision_rooms", {
+  id: int("id").autoincrement().primaryKey(),
+  title: varchar("title", { length: 512 }).notNull(),
+  question: text("question").notNull(),
+  context: text("context"),
+  partnerId: int("partnerId"),
+  status: mysqlEnum("status", ["open", "deliberating", "consensus_reached", "approved", "modified", "rejected", "more_evidence"]).notNull().default("open"),
+  // Consensus output
+  consensusScore: int("consensusScore"),           // 0-100
+  recommendedAction: text("recommendedAction"),
+  minorityReport: text("minorityReport"),          // Dissenting agents + reasons
+  conflictingAgents: json("conflictingAgents").$type<string[]>().default([]),
+  resolvedConflicts: json("resolvedConflicts").$type<string[]>().default([]),
+  agentsInvoked: json("agentsInvoked").$type<string[]>().default([]),
+  debateRounds: int("debateRounds").default(0),
+  // Executive decision
+  executiveDecision: mysqlEnum("executiveDecision", ["approved", "modified", "rejected", "more_evidence"]),
+  executiveNotes: text("executiveNotes"),
+  decisionOwner: varchar("decisionOwner", { length: 256 }),
+  decisionDeadline: timestamp("decisionDeadline"),
+  decisionMadeAt: timestamp("decisionMadeAt"),
+  decisionMadeBy: int("decisionMadeBy"),           // user.id
+  // Outcome tracking
+  predictedOutcome: text("predictedOutcome"),
+  actualOutcome: text("actualOutcome"),
+  outcomeRecordedAt: timestamp("outcomeRecordedAt"),
+  outcomeAccuracy: int("outcomeAccuracy"),          // 0-100, filled after outcome
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type DecisionRoom = typeof decisionRooms.$inferSelect;
+export type InsertDecisionRoom = typeof decisionRooms.$inferInsert;
+
+// ─── Agent Claims ─────────────────────────────────────────────────────────────
+// Each agent produces discrete claims during a decision room deliberation.
+export const agentClaims = mysqlTable("agent_claims", {
+  id: int("id").autoincrement().primaryKey(),
+  decisionRoomId: int("decisionRoomId").notNull(),
+  agentId: varchar("agentId", { length: 64 }).notNull(),
+  agentName: varchar("agentName", { length: 128 }).notNull(),
+  claimText: text("claimText").notNull(),
+  claimType: mysqlEnum("claimType", ["finding", "challenge", "rebuttal", "synthesis", "minority"]).notNull().default("finding"),
+  confidence: int("confidence").default(50),       // 0-100
+  round: int("round").default(1),                  // 1=independent, 2=challenge, 3=rebuttal
+  // Evidence links
+  knowledgeItemIds: json("knowledgeItemIds").$type<number[]>().default([]),
+  citations: json("citations").$type<string[]>().default([]),
+  excerpts: json("excerpts").$type<string[]>().default([]),
+  // Adjudication
+  voteSupport: int("voteSupport").default(0),
+  voteOppose: int("voteOppose").default(0),
+  voteAbstain: int("voteAbstain").default(0),
+  voteInsufficientEvidence: int("voteInsufficientEvidence").default(0),
+  adjudicationStatus: mysqlEnum("adjudicationStatus", ["pending", "supported", "contested", "rejected", "insufficient_evidence"]).default("pending"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type AgentClaim = typeof agentClaims.$inferSelect;
+export type InsertAgentClaim = typeof agentClaims.$inferInsert;
+
+// ─── Claim Votes ─────────────────────────────────────────────────────────────
+// Individual agent votes on each claim.
+export const claimVotes = mysqlTable("claim_votes", {
+  id: int("id").autoincrement().primaryKey(),
+  claimId: int("claimId").notNull(),
+  decisionRoomId: int("decisionRoomId").notNull(),
+  votingAgentId: varchar("votingAgentId", { length: 64 }).notNull(),
+  vote: mysqlEnum("vote", ["support", "oppose", "abstain", "insufficient_evidence"]).notNull(),
+  rationale: text("rationale"),
+  confidence: int("confidence").default(50),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type ClaimVote = typeof claimVotes.$inferSelect;
+export type InsertClaimVote = typeof claimVotes.$inferInsert;
+
+// ─── Evidence Ledger ──────────────────────────────────────────────────────────
+// Every factual claim is linked to a verified source record.
+export const evidenceLedger = mysqlTable("evidence_ledger", {
+  id: int("id").autoincrement().primaryKey(),
+  decisionRoomId: int("decisionRoomId"),
+  claimId: int("claimId"),
+  agentId: varchar("agentId", { length: 64 }),
+  // Source reference
+  knowledgeItemId: int("knowledgeItemId"),         // FK to knowledge_items
+  sourceUrl: text("sourceUrl"),
+  sourceName: varchar("sourceName", { length: 512 }),
+  sourceType: mysqlEnum("sourceType", ["primary", "secondary", "regulatory", "internal", "press", "signal"]).default("secondary"),
+  publishedAt: timestamp("publishedAt"),
+  // Evidence quality
+  excerpt: text("excerpt").notNull(),              // Exact supporting text
+  relationship: mysqlEnum("relationship", ["supports", "contradicts", "contextualizes", "insufficient"]).notNull().default("supports"),
+  verificationStatus: mysqlEnum("verificationStatus", ["verified", "unverified", "disputed", "retracted"]).default("unverified"),
+  retrievedAt: timestamp("retrievedAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type EvidenceLedger = typeof evidenceLedger.$inferSelect;
+export type InsertEvidenceLedger = typeof evidenceLedger.$inferInsert;
+
+// ─── Partnership Assets ───────────────────────────────────────────────────────
+// The five strategic assets that sit above individual partner records.
+export const partnershipAssets = mysqlTable("partnership_assets", {
+  id: int("id").autoincrement().primaryKey(),
+  assetType: mysqlEnum("assetType", ["lighthouse_sponsor", "workflow_distribution", "standards_position", "execution_data_loop", "independent_evidence"]).notNull(),
+  title: varchar("title", { length: 256 }).notNull(),
+  strategicObjective: text("strategicObjective"),
+  accountableOwner: varchar("accountableOwner", { length: 256 }),
+  candidatePartnerIds: json("candidatePartnerIds").$type<number[]>().default([]),
+  primaryPartnerId: int("primaryPartnerId"),
+  // Progress
+  currentConfidence: int("currentConfidence").default(0),   // 0-100
+  targetConfidence: int("targetConfidence").default(80),
+  status: mysqlEnum("status", ["not_started", "in_progress", "at_risk", "on_track", "achieved"]).default("not_started"),
+  // Milestones
+  nextMilestone: varchar("nextMilestone", { length: 512 }),
+  nextMilestoneDate: timestamp("nextMilestoneDate"),
+  decisionRequired: text("decisionRequired"),
+  currentBlocker: text("currentBlocker"),
+  // Value
+  evidenceProduced: json("evidenceProduced").$type<string[]>().default([]),
+  commercialImpact: text("commercialImpact"),
+  strategicImpact: text("strategicImpact"),
+  // Kill criteria
+  killCriteria: text("killCriteria"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type PartnershipAsset = typeof partnershipAssets.$inferSelect;
+export type InsertPartnershipAsset = typeof partnershipAssets.$inferInsert;
+
+// ─── Outcome Learning ─────────────────────────────────────────────────────────
+// Compares predicted vs actual outcomes to calibrate agent confidence over time.
+export const outcomeLearning = mysqlTable("outcome_learning", {
+  id: int("id").autoincrement().primaryKey(),
+  decisionRoomId: int("decisionRoomId"),
+  partnerId: int("partnerId"),
+  agentId: varchar("agentId", { length: 64 }),
+  // Prediction
+  predictedOutcome: text("predictedOutcome").notNull(),
+  predictedConfidence: int("predictedConfidence"),
+  predictedAt: timestamp("predictedAt").defaultNow().notNull(),
+  // Actual
+  actualOutcome: text("actualOutcome"),
+  actualRecordedAt: timestamp("actualRecordedAt"),
+  // Calibration
+  accuracyScore: int("accuracyScore"),             // 0-100, computed after actual
+  wrongAssumptions: json("wrongAssumptions").$type<string[]>().default([]),
+  correctAssumptions: json("correctAssumptions").$type<string[]>().default([]),
+  learningNote: text("learningNote"),
+  calibrationAdjustment: int("calibrationAdjustment").default(0), // +/- applied to agent confidence
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type OutcomeLearning = typeof outcomeLearning.$inferSelect;
+export type InsertOutcomeLearning = typeof outcomeLearning.$inferInsert;

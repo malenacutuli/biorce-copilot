@@ -36,6 +36,13 @@
       "when": 1785597723476,
       "tag": "0004_slimy_argent",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1785794757625,
+      "tag": "0005_volatile_bloodaxe",
+      "breakpoints": true
     }
   ]
 }

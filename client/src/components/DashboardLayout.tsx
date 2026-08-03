@@ -21,15 +21,39 @@ import {
 } from "@/components/ui/sidebar";
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users } from "lucide-react";
+import {
+  Activity, AlertTriangle, BarChart2, BookOpen, Brain, Building2,
+  FileText, FlaskConical, Globe, Gavel, LayoutDashboard, LogOut,
+  Network, PanelLeft, Scale, Search, Settings, Shield, Swords,
+  TrendingUp, Users, Zap,
+} from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 
 const menuItems = [
-  { icon: LayoutDashboard, label: "Page 1", path: "/" },
-  { icon: Users, label: "Page 2", path: "/some-path" },
+  // Command Center
+  { icon: Zap,           label: "Command Center",    path: "/" },
+  { icon: Brain,         label: "Copilot",           path: "/copilot" },
+  { icon: Gavel,         label: "Decision Rooms",    path: "/decisions" },
+  // Intelligence
+  { icon: BookOpen,      label: "Knowledge Base",    path: "/knowledge" },
+  { icon: Shield,        label: "Regulatory",        path: "/regulatory" },
+  { icon: Swords,        label: "Competitive Intel", path: "/competitive" },
+  { icon: FlaskConical,  label: "Pharma Signals",    path: "/pharma-signal" },
+  // Partnerships
+  { icon: Building2,     label: "Partnerships",      path: "/partnerships" },
+  { icon: Network,       label: "Knowledge Graph",   path: "/graph" },
+  // Operations
+  { icon: AlertTriangle, label: "Discrepancies",     path: "/discrepancies" },
+  { icon: Activity,      label: "Alerts",            path: "/alerts" },
+  { icon: FileText,      label: "Board Memo",        path: "/board-memo" },
+  { icon: BarChart2,     label: "Media Library",     path: "/media" },
+  { icon: Globe,         label: "Press Room",        path: "/press" },
+  // System
+  { icon: TrendingUp,    label: "Outcome Learning",  path: "/outcomes" },
+  { icon: Settings,      label: "Admin",             path: "/admin" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";

@@ -2,7 +2,113 @@ import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Plus, TrendingUp, BookOpen, Users } from "lucide-react";
+import { Plus, TrendingUp, BookOpen, Users, Bot, Play, Clock, CheckCircle, AlertCircle } from "lucide-react";
+
+// ─── Agent Registry (mirrors langchainOrchestrator.ts) ───────────────────────
+const AGENT_REGISTRY = [
+  { id: "regulatory_watch",    name: "Regulatory Watch Agent",       domain: "regulatory",    schedule: "Daily 07:00 UTC",   path: "/api/scheduled/agent-regulatory-watch",    color: "text-blue-400" },
+  { id: "competitive_intel",   name: "Competitive Intelligence Agent", domain: "competitive", schedule: "Daily 07:30 UTC",   path: "/api/scheduled/agent-competitive-intel",   color: "text-orange-400" },
+  { id: "partnership_pulse",   name: "Partnership Pulse Agent",      domain: "partnerships",  schedule: "Daily 08:00 UTC",   path: "/api/scheduled/daily-partnership-pulse",   color: "text-purple-400" },
+  { id: "pharma_signal",       name: "Pharma Signal Engine",         domain: "pharma",        schedule: "Daily 08:30 UTC",   path: "/api/scheduled/agent-pharma-signal",       color: "text-green-400" },
+  { id: "opportunity_agent",   name: "Opportunity Agent",            domain: "opportunity",   schedule: "Daily 09:00 UTC",   path: "/api/scheduled/agent-opportunity",          color: "text-yellow-400" },
+  { id: "contradiction_agent", name: "Contradiction Agent",          domain: "contradictions", schedule: "Daily 09:30 UTC",  path: "/api/scheduled/agent-contradiction",        color: "text-red-400" },
+  { id: "strategy_execution",  name: "Strategy Execution Agent",     domain: "execution",     schedule: "Daily 10:00 UTC",   path: "/api/scheduled/agent-strategy-execution",  color: "text-cyan-400" },
+  { id: "claims_guardian",     name: "Claims Guardian",              domain: "claims",        schedule: "Mon 09:30 UTC",     path: "/api/scheduled/agent-claims-guardian",     color: "text-pink-400" },
+  { id: "vision_consistency",  name: "Vision Consistency Agent",     domain: "vision",        schedule: "Mon 10:00 UTC",     path: "/api/scheduled/agent-vision-consistency",  color: "text-indigo-400" },
+  { id: "scientific_evidence", name: "Scientific Evidence Agent",    domain: "science",       schedule: "Tue 08:00 UTC",     path: "/api/scheduled/agent-scientific-evidence", color: "text-teal-400" },
+  { id: "standards_watch",     name: "Standards Watch Agent",        domain: "standards",     schedule: "Wed 08:00 UTC",     path: "/api/scheduled/agent-standards-watch",     color: "text-lime-400" },
+  { id: "weekly_digest",       name: "Weekly Intelligence Digest",   domain: "digest",        schedule: "Mon 09:00 UTC",     path: "/api/scheduled/weekly-digest",             color: "text-amber-400" },
+  { id: "board_intelligence",  name: "Board Intelligence Agent",     domain: "board",         schedule: "1st of month 08:00 UTC", path: "/api/scheduled/agent-board-intelligence", color: "text-rose-400" },
+] as const;
+
+function AgentsPanel() {
+  const [triggering, setTriggering] = useState<string | null>(null);
+  const [results, setResults] = useState<Record<string, { ok: boolean; message: string }>>({});
+  const triggerMutation = trpc.scheduledAgents.triggerJob.useMutation({
+    onSuccess: (data, variables) => {
+      const agentId = variables.path.split("/").pop() ?? variables.path;
+      setResults(prev => ({
+        ...prev,
+        [agentId]: { ok: data.ok, message: data.ok ? "Triggered successfully" : `Error: ${JSON.stringify(data.body)}` },
+      }));
+      toast[data.ok ? "success" : "error"](data.ok ? "Agent triggered successfully" : "Agent trigger failed");
+      setTriggering(null);
+    },
+    onError: (err, variables) => {
+      const agentId = variables.path.split("/").pop() ?? variables.path;
+      setResults(prev => ({ ...prev, [agentId]: { ok: false, message: err.message } }));
+      toast.error(`Agent trigger failed: ${err.message}`);
+      setTriggering(null);
+    },
+  });
+
+  function handleTrigger(path: string) {
+    const agentId = path.split("/").pop() ?? path;
+    setTriggering(agentId);
+    triggerMutation.mutate({ path });
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="flex items-center gap-2 mb-4">
+        <Bot size={16} style={{ color: "var(--color-primary)" }} />
+        <h2 className="text-sm font-semibold" style={{ color: "var(--color-foreground)" }}>LangChain Agent Network</h2>
+        <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">13 agents live</span>
+      </div>
+      <p className="text-xs mb-4" style={{ color: "var(--color-muted-foreground)" }}>
+        All agents run on live cron schedules via Heartbeat. Each uses the LangChain orchestrator: structured prompt → ChatOpenAI → JSON output with confidence scoring, citations, and retry logic. Use "Run Now" to trigger any agent manually.
+      </p>
+      <div className="grid gap-2">
+        {AGENT_REGISTRY.map(agent => {
+          const agentId = agent.path.split("/").pop() ?? agent.id;
+          const result = results[agentId];
+          const isTriggering = triggering === agentId;
+          return (
+            <div key={agent.id} className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-accent/30 transition-colors">
+              <div className={`w-2 h-2 rounded-full bg-current flex-shrink-0 ${agent.color}`} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium truncate" style={{ color: "var(--color-foreground)" }}>{agent.name}</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground flex-shrink-0">{agent.domain}</span>
+                </div>
+                <div className="flex items-center gap-1 mt-0.5">
+                  <Clock size={10} className="text-muted-foreground flex-shrink-0" />
+                  <span className="text-xs" style={{ color: "var(--color-muted-foreground)" }}>{agent.schedule}</span>
+                  {result && (
+                    <span className={`ml-2 text-xs flex items-center gap-1 ${result.ok ? "text-green-400" : "text-red-400"}`}>
+                      {result.ok ? <CheckCircle size={10} /> : <AlertCircle size={10} />}
+                      {result.message}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => handleTrigger(agent.path)}
+                disabled={isTriggering}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border border-border hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                style={{ color: "var(--color-foreground)" }}
+              >
+                {isTriggering ? (
+                  <span className="animate-spin inline-block w-3 h-3 border border-current border-t-transparent rounded-full" />
+                ) : (
+                  <Play size={10} />
+                )}
+                {isTriggering ? "Running…" : "Run Now"}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-4 pt-4 border-t border-border">
+        <p className="text-xs" style={{ color: "var(--color-muted-foreground)" }}>
+          <strong>Architecture:</strong> Router Chain → Parallel Agent Chains → Debate Round → Consensus Chain → Synthesis Chain. 
+          Each agent writes findings to the DB as alerts, discrepancies, or knowledge items. 
+          The Copilot Q&A uses the full 5-step orchestration pipeline.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 const KNOWLEDGE_CATEGORIES = [
   { value: "podcast", label: "Podcast" },
@@ -243,6 +349,7 @@ export default function Admin() {
           <p className="text-xs mt-0.5" style={{ color: "var(--color-muted-foreground)" }}>Add knowledge items, log competitive events, and manage intelligence data</p>
         </div>
         <div className="flex flex-col gap-6">
+          <AgentsPanel />
           <KnowledgeForm />
         <CiEventForm />
           <PartnerForm />

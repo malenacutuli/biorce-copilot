@@ -5,7 +5,9 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { invokeLLM } from "./_core/llm";
+import { listHeartbeatJobs } from "./_core/heartbeat";
 import { runBiorceOrchestrator, getAvailableAgents } from "./agentOrchestrator";
+import { runLangChainOrchestrator, toLegacyAnswer, LANGCHAIN_AGENTS, persistDecisionRoom } from "./langchainOrchestrator";
 import {
   countKnowledgeItems, countOpenDiscrepancies, countUnreadAlerts,
   countPartnersByStage, createAlert, createCiEvent, createKnowledgeItem,
@@ -15,7 +17,7 @@ import {
   getRegulatoryItems, getUserByOpenId, markAlertRead, updateDiscrepancyStatus,
   updatePartnerStage, upsertUser,
 } from "./db";
-import { exportKnowledgeItemsCsv } from "./db";
+import { exportKnowledgeItemsCsv, getDecisionRooms, getDecisionRoomById, getAgentClaims, getClaimVotes, getEvidenceForRoom, getPartnershipAssets, upsertPartnershipAsset, updatePartnershipAsset, getOutcomeLearning, recordActualOutcome } from "./db";
 import {
   getPharmaSignals, getPharmaSignalById, createPharmaSignal,
   updatePharmaSignalStatus, updatePharmaSignalNotes,
@@ -275,7 +277,8 @@ const copilotRouter = router({
     }))
     .mutation(async ({ input }) => {
       // Fetch relevant context from knowledge base
-      const relevantItems = await getKnowledgeItems({ search: input.question.slice(0, 100), limit: 8 });
+      // Full question search — multi-keyword, no truncation
+      const relevantItems = await getKnowledgeItems({ search: input.question, limit: 12 });
       const regulatoryContext = await getRegulatoryItems({ limit: 10 });
       const competitorContext = await getCompetitors();
       const partnerContext = await getPartners({ limit: 15 });
@@ -296,9 +299,9 @@ const copilotRouter = router({
         `[PARTNER: ${p.name} | ${p.tier}/${p.stage}] ${p.type} — ${p.description ?? ""}`
       ).join("\n");
 
-      if (input.useOrchestrator) {
-        // Multi-agent orchestrated answer
-        const { answer, agentResults } = await runBiorceOrchestrator({
+        if (input.useOrchestrator) {
+        // LangChain multi-agent orchestration: route → parallel agents → debate → consensus → synthesis
+        const lcResult = await runLangChainOrchestrator({
           question: input.question,
           conversationHistory: input.conversationHistory,
           knowledgeBase: knowledgeContext,
@@ -306,9 +309,28 @@ const copilotRouter = router({
           competitorContext: competitorCtx,
           partnerContext: partnerCtx,
         });
+        const answer = toLegacyAnswer(lcResult);
+        // Persist every orchestration as a traceable decision room (fire-and-forget)
+        persistDecisionRoom(
+          input.question.slice(0, 120),
+          input.question,
+          lcResult,
+          {}
+        ).catch(e => console.error("[copilot] persistDecisionRoom failed:", e));
+        const agentResults = lcResult.agentFindings.map(f => ({
+          agentId: f.agentId,
+          agentName: f.agentName,
+          finding: f.finding,
+          confidence: f.confidence,
+          citations: f.citations,
+          flags: f.flags,
+          recommendations: f.recommendations,
+          debateChallenge: f.debateChallenge,
+          debateResponse: f.debateResponse,
+        }));
         return {
           answer: null,
-          orchestratedAnswer: answer,
+          orchestratedAnswer: { ...answer, consensusScore: lcResult.consensus.agreementScore, debateRounds: lcResult.debateRounds, conflictingAgents: lcResult.consensus.conflictingAgents },
           agentResults,
           sourcesUsed: relevantItems.map(i => ({ id: i.id, title: i.title, sourceName: i.sourceName, verificationStatus: i.verificationStatus })),
         };
@@ -335,7 +357,13 @@ KNOWLEDGE BASE:\n${knowledgeContext}\nREGULATORY:\n${regulatoryCtx}\nCOMPETITIVE
       };
     }),
 
-  agents: protectedProcedure.query(() => getAvailableAgents()),
+  agents: protectedProcedure.query(() => LANGCHAIN_AGENTS.map(a => ({
+    id: a.id,
+    name: a.name,
+    domain: a.domain,
+    description: `LangChain agent — ${a.activationKeywords.slice(0, 3).join(", ")}`,
+    activationKeywords: [...a.activationKeywords],
+  }))),
 });
 
 // ─── Board Memo Router ────────────────────────────────────────────────────────
@@ -608,7 +636,21 @@ const partnerCrmRouter = router({
       linkedSourceTable: z.string().optional(),
       linkedSourceId: z.number().optional(),
     }))
-    .mutation(({ input, ctx }) => createPartnerActivity({ ...input, loggedBy: ctx.user.id } as any)),
+    .mutation(({ input, ctx }) => {
+      // Map UI field names (summary, nextAction, nextActionDue) to DB column names (title, body, nextStep, nextStepDate)
+      const { summary, nextAction, nextActionDue, activityType, ...rest } = input;
+      // Map contract_sent → note (not in DB enum)
+      const dbActivityType = activityType === "contract_sent" ? "note" : activityType === "other" ? "note" : activityType;
+      return createPartnerActivity({
+        ...rest,
+        activityType: dbActivityType as any,
+        title: summary,
+        body: summary,
+        nextStep: nextAction ?? null,
+        nextStepDate: nextActionDue ? new Date(nextActionDue) : null,
+        loggedByUserId: ctx.user.id,
+      } as any);
+    }),
 
   deleteActivity: protectedProcedure
     .input(z.object({ id: z.number() }))
@@ -661,6 +703,181 @@ const connectorsRouter = router({
     .mutation(({ input }) => toggleConnector(input.id, input.isEnabled)),
 });
 
+// ─── Scheduled Agents Router ──────────────────────────────────────────────────
+const scheduledAgentsRouter = router({
+  listJobs: protectedProcedure.query(async ({ ctx }) => {
+    const sessionCookie = (ctx.req as any).cookies?.[COOKIE_NAME] ?? "";
+    const result = await listHeartbeatJobs(sessionCookie);
+    return result.jobs;
+  }),
+  triggerJob: protectedProcedure
+    .input(z.object({ path: z.string() }))
+    .mutation(async ({ input }) => {
+      const port = process.env.PORT || 3000;
+      const resp = await fetch(`http://localhost:${port}${input.path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+      const body = await resp.json().catch(() => ({}));
+      return { status: resp.status, ok: resp.ok, body };
+    }),
+});
+
+// ─── Decision Rooms Router ────────────────────────────────────────────────────
+const decisionRoomsRouter = router({
+  list: protectedProcedure
+    .input(z.object({ limit: z.number().optional() }).optional())
+    .query(({ input }) => getDecisionRooms({ limit: input?.limit })),
+
+  byId: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const room = await getDecisionRoomById(input.id);
+      if (!room) return null;
+      const [claims, evidence] = await Promise.all([
+        getAgentClaims(input.id),
+        getEvidenceForRoom(input.id),
+      ]);
+      // Attach votes to each claim and map to UI field names
+      const claimsWithVotesMapped = await Promise.all(
+        claims.map(async (claim) => {
+          const votes = await getClaimVotes(claim.id);
+          return {
+            ...claim,
+            votes,
+            supportCount: claim.voteSupport ?? 0,
+            opposeCount: claim.voteOppose ?? 0,
+            abstainCount: claim.voteAbstain ?? 0,
+            verdict: claim.adjudicationStatus,
+            evidenceCount: (claim.voteSupport ?? 0) + (claim.voteOppose ?? 0) + (claim.voteAbstain ?? 0),
+          };
+        })
+      );
+      const evidenceMapped = evidence.map((e) => ({
+        ...e,
+        source: e.sourceName ?? e.sourceUrl ?? "Unknown source",
+        publishedDate: e.publishedAt,
+        claimsSupported: e.relationship === "supports" ? [e.sourceName ?? ""] : [],
+        claimsContradicted: e.relationship === "contradicts" ? [e.sourceName ?? ""] : [],
+      }));
+      const AGENT_DOMAINS: Record<string, string> = {
+        "partnership-intelligence": "Partnership Strategy",
+        "scientific-evidence": "Clinical Evidence",
+        "commercial": "Commercial Strategy",
+        "legal-data-rights": "Legal / Data Rights",
+        "red-team-risk": "Red-Team Risk",
+        "executive-synthesis": "Executive Synthesis",
+      };
+      const agentMap = new Map<string, { agentId: string; agentName: string; domain: string; position: string; primaryClaim: string; confidence: number | null }>();
+      for (const c of claims) {
+        if (!agentMap.has(c.agentId)) {
+          const pos = c.adjudicationStatus === "supported" ? "support"
+            : c.adjudicationStatus === "contested" ? "conditional"
+            : c.adjudicationStatus === "rejected" ? "oppose"
+            : c.adjudicationStatus === "insufficient_evidence" ? "insufficient_evidence"
+            : "abstain";
+          agentMap.set(c.agentId, { agentId: c.agentId, agentName: c.agentName, domain: AGENT_DOMAINS[c.agentId] ?? c.agentName, position: pos, primaryClaim: c.claimText, confidence: c.confidence ?? null });
+        }
+      }
+      const agentPositions = Array.from(agentMap.values());
+      const synthesisText = room.recommendedAction ?? null;
+      const principalRisk = room.minorityReport ?? null;
+      const requiredConditions: string[] = [];
+      if (room.recommendedAction) {
+        const m = room.recommendedAction.match(/if\s+(.+)$/i);
+        if (m) requiredConditions.push(...m[1].split(/,\s*(?:and\s+)?/).map((s) => s.trim()).filter(Boolean));
+      }
+      return { ...room, claims: claimsWithVotesMapped, evidence: evidenceMapped, agentPositions, synthesisText, requiredConditions, principalRisk };
+    }),
+
+  approve: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      decision: z.enum(["approved", "modified", "rejected", "more_evidence"]),
+      executiveNote: z.string().optional(),
+      owner: z.string().optional(),
+      deadline: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { updateDecisionRoom } = await import("./db");
+      await updateDecisionRoom(input.id, {
+        executiveDecision: input.decision,
+        executiveNotes: input.executiveNote ?? null,
+        decisionOwner: input.owner ?? null,
+        decisionDeadline: input.deadline ? new Date(input.deadline) : null,
+        decisionMadeAt: new Date(),
+        status: "consensus_reached",
+      });
+      return { success: true };
+    }),
+});
+
+// ─── Partnership Assets Router ────────────────────────────────────────────────
+const partnershipAssetsRouter = router({
+  list: protectedProcedure.query(() => getPartnershipAssets()),
+
+  upsert: protectedProcedure
+    .input(z.object({
+      assetType: z.string(),
+      partnerName: z.string(),
+      partnerId: z.number().optional(),
+      confidenceScore: z.number().optional(),
+      targetOutcome: z.string().optional(),
+      currentStatus: z.string().optional(),
+      nextMilestone: z.string().optional(),
+      decisionRequired: z.string().optional(),
+      currentBlocker: z.string().optional(),
+      evidenceProduced: z.array(z.string()).optional(),
+      commercialImpact: z.string().optional(),
+      strategicImpact: z.string().optional(),
+      accountableOwner: z.string().optional(),
+      dueDate: z.string().optional(),
+    }))
+    .mutation(({ input }) => upsertPartnershipAsset({
+      title: input.partnerName,
+      assetType: input.assetType as any,
+      primaryPartnerId: input.partnerId ?? null,
+      currentConfidence: input.confidenceScore ?? null,
+      strategicObjective: input.targetOutcome ?? null,
+      nextMilestone: input.nextMilestone ?? null,
+      nextMilestoneDate: input.dueDate ? new Date(input.dueDate) : null,
+      decisionRequired: input.decisionRequired ?? null,
+      currentBlocker: input.currentBlocker ?? null,
+      evidenceProduced: (input.evidenceProduced ?? null) as any,
+      commercialImpact: input.commercialImpact ?? null,
+      strategicImpact: input.strategicImpact ?? null,
+      accountableOwner: input.accountableOwner ?? null,
+    })),
+});
+
+// ─── Outcome Learning Router ──────────────────────────────────────────────────
+const outcomeLearningRouter = router({
+  list: protectedProcedure
+    .input(z.object({ limit: z.number().optional() }).optional())
+    .query(({ input }) => getOutcomeLearning({ limit: input?.limit })),
+
+  recordActual: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      actualOutcome: z.string(),
+      accuracyScore: z.number(),
+      wrongAssumptions: z.array(z.string()),
+      correctAssumptions: z.array(z.string()),
+      learningNote: z.string(),
+    }))
+    .mutation(({ input }) =>
+      recordActualOutcome(
+        input.id,
+        input.actualOutcome,
+        input.accuracyScore,
+        input.wrongAssumptions,
+        input.correctAssumptions,
+        input.learningNote
+      )
+    ),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -687,6 +904,10 @@ export const appRouter = router({
   comments: commentsRouter,
   partnerCrm: partnerCrmRouter,
   connectors: connectorsRouter,
+  scheduledAgents: scheduledAgentsRouter,
+  decisionRooms: decisionRoomsRouter,
+  partnershipAssets: partnershipAssetsRouter,
+  outcomeLearning: outcomeLearningRouter,
 });
 
 export type AppRouter = typeof appRouter;

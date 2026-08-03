@@ -20,6 +20,8 @@ import PharmaSignal from "./pages/PharmaSignal";
 import MediaLibrary from "./pages/MediaLibrary";
 import PressRoom from "./pages/PressRoom";
 import Connectors from "./pages/Connectors";
+import DecisionRooms from "./pages/DecisionRooms";
+import OutcomeLearning from "./pages/OutcomeLearning";
 
 function Router() {
   return (
@@ -40,6 +42,8 @@ function Router() {
       <Route path="/media" component={MediaLibrary} />
       <Route path="/press" component={PressRoom} />
       <Route path="/connectors" component={Connectors} />
+      <Route path="/decisions" component={DecisionRooms} />
+      <Route path="/outcomes" component={OutcomeLearning} />
       <Route component={NotFound} />
     </Switch>
   );
