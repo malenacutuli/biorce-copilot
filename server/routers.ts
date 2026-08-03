@@ -5,7 +5,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { invokeLLM } from "./_core/llm";
-import { listHeartbeatJobs } from "./_core/heartbeat";
+import { listHeartbeatJobs, updateHeartbeatJob } from "./_core/heartbeat";
 import { runBiorceOrchestrator, getAvailableAgents } from "./agentOrchestrator";
 import { runLangChainOrchestrator, toLegacyAnswer, LANGCHAIN_AGENTS, persistDecisionRoom } from "./langchainOrchestrator";
 import {
@@ -721,6 +721,13 @@ const scheduledAgentsRouter = router({
       });
       const body = await resp.json().catch(() => ({}));
       return { status: resp.status, ok: resp.ok, body };
+    }),
+  toggleJob: protectedProcedure
+    .input(z.object({ taskUid: z.string(), enable: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const sessionCookie = (ctx.req as any).cookies?.[COOKIE_NAME] ?? "";
+      await updateHeartbeatJob(input.taskUid, { enable: input.enable }, sessionCookie);
+      return { ok: true };
     }),
 });
 

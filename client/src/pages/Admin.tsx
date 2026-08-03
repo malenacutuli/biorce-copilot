@@ -2,7 +2,7 @@ import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Plus, TrendingUp, BookOpen, Users, Bot, Play, Clock, CheckCircle, AlertCircle } from "lucide-react";
+import { Plus, TrendingUp, BookOpen, Users, Bot, Play, Clock, CheckCircle, AlertCircle, ToggleLeft, ToggleRight, RefreshCw } from "lucide-react";
 
 // ─── Agent Registry (mirrors langchainOrchestrator.ts) ───────────────────────
 const AGENT_REGISTRY = [
@@ -340,6 +340,79 @@ function PartnerForm() {
   );
 }
 
+function ScheduledJobsPanel() {
+  const { data: jobs, isLoading, refetch } = trpc.scheduledAgents.listJobs.useQuery();
+  const toggleMut = trpc.scheduledAgents.toggleJob.useMutation({
+    onSuccess: (_, vars) => {
+      toast.success(vars.enable ? "Job enabled" : "Job paused");
+      refetch();
+    },
+    onError: (err) => toast.error(`Toggle failed: ${err.message}`),
+  });
+
+  function formatDate(iso: string | null | undefined) {
+    if (!iso) return "—";
+    return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="flex items-center gap-2 mb-4">
+        <Clock size={16} style={{ color: "var(--color-primary)" }} />
+        <h2 className="text-sm font-semibold" style={{ color: "var(--color-foreground)" }}>Scheduled Jobs</h2>
+        <button onClick={() => refetch()} className="ml-auto p-1 rounded hover:bg-accent transition-colors" title="Refresh">
+          <RefreshCw size={12} style={{ color: "var(--color-muted-foreground)" }} />
+        </button>
+      </div>
+      {isLoading ? (
+        <p className="text-xs" style={{ color: "var(--color-muted-foreground)" }}>Loading jobs…</p>
+      ) : !jobs || jobs.length === 0 ? (
+        <p className="text-xs" style={{ color: "var(--color-muted-foreground)" }}>No scheduled jobs found.</p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {jobs.map((job: any) => (
+            <div key={job.taskUid} className="flex items-start gap-3 p-3 rounded-lg border border-border hover:bg-accent/20 transition-colors">
+              <div className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 ${job.isEnable ? "bg-green-400" : "bg-muted-foreground"}`} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-medium" style={{ color: "var(--color-foreground)" }}>{job.name}</span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded ${job.isEnable ? "bg-green-500/10 text-green-400 border border-green-500/20" : "bg-muted/50 text-muted-foreground border border-border"}`}>
+                    {job.isEnable ? "Active" : "Paused"}
+                  </span>
+                </div>
+                {job.description && (
+                  <p className="text-xs mt-0.5 truncate" style={{ color: "var(--color-muted-foreground)" }}>{job.description}</p>
+                )}
+                <div className="flex items-center gap-4 mt-1 flex-wrap">
+                  <span className="text-xs" style={{ color: "var(--color-muted-foreground)" }}>
+                    <span className="opacity-60">Cron:</span> {job.cronExpression}
+                  </span>
+                  <span className="text-xs" style={{ color: "var(--color-muted-foreground)" }}>
+                    <span className="opacity-60">Last:</span> {formatDate(job.lastExecutedAt)}
+                  </span>
+                  <span className="text-xs" style={{ color: "var(--color-muted-foreground)" }}>
+                    <span className="opacity-60">Next:</span> {formatDate(job.nextExecutionAt)}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => toggleMut.mutate({ taskUid: job.taskUid, enable: !job.isEnable })}
+                disabled={toggleMut.isPending}
+                className="flex items-center gap-1 px-2 py-1 rounded text-xs border border-border hover:bg-accent transition-colors disabled:opacity-50 flex-shrink-0"
+                style={{ color: "var(--color-foreground)" }}
+                title={job.isEnable ? "Pause job" : "Enable job"}
+              >
+                {job.isEnable ? <ToggleRight size={14} className="text-green-400" /> : <ToggleLeft size={14} className="text-muted-foreground" />}
+                {job.isEnable ? "Pause" : "Enable"}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Admin() {
   return (
     <AppLayout>
@@ -350,6 +423,7 @@ export default function Admin() {
         </div>
         <div className="flex flex-col gap-6">
           <AgentsPanel />
+          <ScheduledJobsPanel />
           <KnowledgeForm />
         <CiEventForm />
           <PartnerForm />

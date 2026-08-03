@@ -73,7 +73,7 @@
 - [x] 0 TypeScript errors after all changes
 
 ## Live Scheduled Agents
-- [ ] Implement daily partnership-pulse handler (stale partner detection, LLM-generated nudge alerts)
+- [x] Implement daily partnership-pulse handler (stale partner detection, LLM-generated nudge alerts)
 ## Decision Rooms & Outcome Learning
 - [x] DB schema: decision_rooms, agent_claims, claim_votes, evidence_ledger tables
 - [x] Seed Novo Nordisk lighthouse partnership decision room (5 claims, 5 evidence entries, 78% consensus)
@@ -82,8 +82,8 @@
 - [x] byId query maps DB fields to UI aliases (supportCount, opposeCount, abstainCount, verdict, evidenceCount, agentPositions, synthesisText, requiredConditions, principalRisk)
 - [x] Outcome Learning page: tracks predicted vs actual outcomes, accuracy calibration
 - [x] 0 TypeScript errors after all changes
-- [ ] Add getStalePartners DB helper (partners with no activity in 14+ days, active stages only)
-- [ ] Register daily-partnership-pulse cron via manus-heartbeat CLI (08:00 UTC daily)
-- [ ] Register weekly-digest cron via manus-heartbeat CLI (09:00 UTC every Monday)
-- [ ] Add Admin Panel Scheduled Jobs tab: live cron status, last run, next run, enable/disable toggle
-- [ ] Add tRPC admin.listScheduledJobs and admin.toggleScheduledJob procedures
+- [x] Add getStalePartners DB helper (partners with no activity in 14+ days, active stages only)
+- [x] Register daily-partnership-pulse cron via manus-heartbeat CLI (08:00 UTC daily)
+- [x] Register weekly-digest cron via manus-heartbeat CLI (09:00 UTC every Monday)
+- [x] Add Admin Panel Scheduled Jobs tab: live cron status, last run, next run, enable/disable toggle
+- [x] Add tRPC scheduledAgents.listJobs and scheduledAgents.toggleJob procedures
