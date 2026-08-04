@@ -319,7 +319,7 @@ const copilotRouter = router({
 
         if (autoCreate) {
           // Duplicate detection: search open rooms for a close match
-          findSimilarDecisionRoom(input.question, undefined).then(existingRoom => {
+          findSimilarDecisionRoom(input.question, undefined).then(candidate => {
             persistDecisionRoom(
               input.question.slice(0, 120),
               input.question,
@@ -331,7 +331,7 @@ const copilotRouter = router({
                 gateVersion: gateResult.gateVersion,
                 roomSource: "auto",
                 initiatedBy: ctx.user?.openId ?? undefined,
-                existingRoomId: existingRoom?.id,
+                existingRoomId: candidate?.room.id,
               }
             ).catch(e => console.error("[copilot] persistDecisionRoom failed:", e));
           }).catch(e => console.error("[copilot] duplicate check failed:", e));
@@ -366,6 +366,38 @@ const copilotRouter = router({
             proposedDeadline: gateResult.proposedDeadline,
             autoCreated: autoCreate,
             promptUser,
+            candidateToken: await (async () => {
+              const { issueDecisionRoomCandidate, findSimilarDecisionRoom } = await import("./db");
+              const dup = await (async () => { try { return await findSimilarDecisionRoom(input.question, undefined); } catch { return null; } })();
+              return issueDecisionRoomCandidate(
+                ctx.user?.openId ?? "anon",
+                {
+                  question: input.question,
+                  normalizedQuestion: gateResult.normalizedQuestion ?? input.question,
+                  gateConfidence: gateResult.confidence,
+                  gateMateriality: gateResult.materiality,
+                  gateRationale: gateResult.rationale,
+                  gateVersion: gateResult.gateVersion,
+                  gateAlternatives: gateResult.alternatives,
+                  gateProposedOwner: gateResult.proposedOwner ?? null,
+                  gateProposedDeadline: gateResult.proposedDeadline ?? null,
+                  duplicateRoomId: dup?.room.id ?? null,
+                  duplicateSimilarity: dup?.similarity ?? null,
+                  duplicateStatus: dup?.room.status ?? null,
+                  duplicateQuestion: dup?.room.question ?? null,
+                  copilotRunId: null,
+                }
+              );
+            })(),
+            gateVersion: gateResult.gateVersion,
+            duplicateCandidate: await (async () => {
+              try {
+                const { findSimilarDecisionRoom: fsr } = await import("./db");
+                const dup = await fsr(input.question, undefined);
+                if (!dup) return null;
+                return { roomId: dup.room.id, similarity: Math.round(dup.similarity * 100), status: dup.room.status, question: dup.room.question ?? "" };
+              } catch { return null; }
+            })(),
           },
         };
       }
@@ -864,15 +896,118 @@ const decisionRoomsRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const { updateDecisionRoom } = await import("./db");
+      const statusMap: Record<string, "approved" | "modified" | "rejected" | "more_evidence"> = {
+        approved: "approved",
+        modified: "modified",
+        rejected: "rejected",
+        more_evidence: "more_evidence",
+      };
       await updateDecisionRoom(input.id, {
         executiveDecision: input.decision,
         executiveNotes: input.executiveNote ?? null,
         decisionOwner: input.owner ?? null,
         decisionDeadline: input.deadline ? new Date(input.deadline) : null,
         decisionMadeAt: new Date(),
-        status: "consensus_reached",
+        status: statusMap[input.decision] ?? "approved",
       });
       return { success: true };
+    }),
+
+  // ── User-confirmed Decision Room creation ────────────────────────────────────
+  confirmCandidate: protectedProcedure
+    .input(z.object({
+      // Opaque server-issued token — no gate metadata accepted from client
+      candidateToken: z.string().min(1).max(128),
+      duplicateAction: z.enum(["add_evidence", "open_existing", "create_separate"]).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const {
+        getDecisionRoomCandidate,
+        consumeDecisionRoomCandidate,
+        createDecisionRoom,
+        getDecisionRoomById,
+        updateDecisionRoom,
+      } = await import("./db");
+
+      // ── 1. Validate the server-issued candidate ──────────────────────────────
+      const candidate = await getDecisionRoomCandidate(input.candidateToken);
+      if (!candidate) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Candidate not found or invalid token." });
+      }
+      // Authorization: candidate must belong to the authenticated user
+      if (candidate.userOpenId !== ctx.user.openId) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "This candidate belongs to a different user." });
+      }
+      // Expiry check
+      if (new Date() > candidate.expiresAt) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Candidate has expired. Please re-submit your question." });
+      }
+      // Idempotency: already consumed → return the existing room
+      if (candidate.consumedAt != null && candidate.resultingRoomId != null) {
+        return { roomId: candidate.resultingRoomId, created: false, action: "idempotent" as const };
+      }
+      if (candidate.consumedAt != null) {
+        throw new TRPCError({ code: "CONFLICT", message: "Candidate already consumed." });
+      }
+
+      // ── 2. Duplicate resolution (using server-stored duplicate info) ─────────
+      const duplicateRoomId = candidate.payloadJson?.duplicateRoomId ?? null;
+      const duplicateAction = input.duplicateAction;
+      if (duplicateRoomId != null && duplicateAction) {
+        const duplicate = await getDecisionRoomById(duplicateRoomId);
+        if (!duplicate) throw new TRPCError({ code: "NOT_FOUND", message: "Duplicate room not found." });
+        // Guard: never append to closed/historical rooms
+        const closedStatuses = ["approved", "modified", "rejected", "historical"] as const;
+        if ((closedStatuses as readonly string[]).includes(duplicate.status as typeof closedStatuses[number])) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: `Cannot append to a room with status '${duplicate.status}'. Create a separate Decision Room instead.`,
+          });
+        }
+        if (duplicateAction === "open_existing") {
+          await consumeDecisionRoomCandidate(input.candidateToken, duplicateRoomId, duplicateAction ?? "open_existing");
+          return { roomId: duplicateRoomId, created: false, action: "open_existing" as const };
+        }
+        if (duplicateAction === "add_evidence") {
+          await updateDecisionRoom(duplicateRoomId, {
+            context: (duplicate.context ? duplicate.context + "\n\n" : "") +
+              `[Evidence added ${new Date().toISOString()} by ${ctx.user.name ?? ctx.user.openId}]: ${candidate.payloadJson?.question ?? ""}`,
+          });
+          await consumeDecisionRoomCandidate(input.candidateToken, duplicateRoomId, duplicateAction ?? "open_existing");
+          return { roomId: duplicateRoomId, created: false, action: "add_evidence" as const };
+        }
+        // create_separate falls through
+      }
+
+      // ── 3. Create new user-confirmed room ────────────────────────────────────
+      // Gate metadata comes exclusively from the server-stored candidate (not from client input)
+      const roomId = await createDecisionRoom({
+        title: (candidate.payloadJson?.question ?? "").slice(0, 120),
+        question: candidate.payloadJson?.question ?? "",
+        context: `User-confirmed Decision Room opened from Copilot exchange.`,
+        status: "open",
+        roomSource: "user_confirmed",
+        initiatedBy: candidate.userOpenId,
+        gateConfidence: candidate.payloadJson?.gateConfidence ?? null,
+        gateMateriality: (candidate.payloadJson?.gateMateriality as any) ?? null,
+        gateRationale: candidate.payloadJson?.gateRationale ?? null,
+        gateVersion: candidate.payloadJson?.gateVersion ?? null,
+        consensusScore: null,
+        recommendedAction: null,
+        minorityReport: null,
+        conflictingAgents: null,
+        agentsInvoked: null,
+        debateRounds: null,
+        executiveDecision: undefined,
+        executiveNotes: null,
+        decisionOwner: null,
+        decisionDeadline: null,
+        decisionMadeAt: undefined,
+        partnerId: null,
+        consensusVerdict: null,
+      });
+      await consumeDecisionRoomCandidate(input.candidateToken, roomId, "create");
+      return { roomId, created: true, action: "created" as const };
     }),
 });
 

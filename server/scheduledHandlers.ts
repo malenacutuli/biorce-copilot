@@ -13,6 +13,7 @@ import {
   completeJobExecution,
   failJobExecution,
   countConsecutiveFailures,
+  deleteExpiredCandidates,
 } from "./db";
 import { notifyOwner } from "./_core/notification";
 
@@ -311,5 +312,31 @@ export async function dailyPartnershipPulseHandler(req: Request, res: Response) 
       error: err.message,
       timestamp: new Date().toISOString(),
     });
+  }
+}
+
+/**
+ * POST /api/scheduled/candidate-cleanup
+ * Triggered by the Heartbeat cron every hour.
+ * Deletes expired, unconsumed decision_room_candidates to avoid retaining
+ * sensitive question text beyond the 30-minute TTL.
+ */
+export async function candidateCleanupHandler(req: Request, res: Response) {
+  let user: any;
+  try {
+    user = await sdk.authenticateRequest(req);
+  } catch {
+    return res.status(403).json({ error: "auth-failed" });
+  }
+  if (!user.isCron) {
+    return res.status(403).json({ error: "cron-only" });
+  }
+  try {
+    const cutoff = new Date();
+    const deleted = await deleteExpiredCandidates(cutoff);
+    console.log(`[candidate-cleanup] Purged ${deleted} expired unconsumed candidates at ${cutoff.toISOString()}`);
+    return res.json({ deleted, timestamp: cutoff.toISOString() });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message, timestamp: new Date().toISOString() });
   }
 }

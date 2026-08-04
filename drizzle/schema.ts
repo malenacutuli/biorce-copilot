@@ -449,6 +449,48 @@ export const decisionRooms = mysqlTable("decision_rooms", {
 export type DecisionRoom = typeof decisionRooms.$inferSelect;
 export type InsertDecisionRoom = typeof decisionRooms.$inferInsert;
 
+// ─── Decision Room Candidates ─────────────────────────────────────────────────
+// Server-issued opaque tokens for user-confirmed Decision Room creation.
+// The raw token is returned once to the client and never stored.
+// Only the SHA-256 hash of the token is persisted. All gate metadata is
+// stored in payloadJson — the client cannot modify any of it.
+export const decisionRoomCandidates = mysqlTable("decision_room_candidates", {
+  id: int("id").autoincrement().primaryKey(),
+  // SHA-256 hex digest of the raw token — raw token is never stored
+  tokenHash: varchar("tokenHash", { length: 64 }).notNull().unique(),
+  // Authenticated user who triggered the gate
+  userOpenId: varchar("userOpenId", { length: 256 }).notNull(),
+  // All gate metadata, duplicate snapshot, and context frozen at issuance time.
+  // The client cannot modify any field inside this JSON.
+  payloadJson: json("payloadJson").$type<{
+    question: string;
+    normalizedQuestion: string;
+    gateConfidence: number;
+    gateMateriality: string;
+    gateRationale: string;
+    gateVersion: string;
+    gateAlternatives: string[];
+    gateProposedOwner: string | null;
+    gateProposedDeadline: string | null;
+    duplicateRoomId: number | null;
+    duplicateSimilarity: number | null;
+    duplicateStatus: string | null;
+    duplicateQuestion: string | null;
+    copilotRunId: string | null;
+  }>().notNull(),
+  // Lifecycle
+  consumedAt: timestamp("consumedAt"),
+  // Action taken on consumption
+  consumedAction: varchar("consumedAction", { length: 32 }),
+  // Room created or opened from this candidate (set on consumption)
+  resultingRoomId: int("resultingRoomId"),
+  expiresAt: timestamp("expiresAt").notNull(),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+});
+
+export type DecisionRoomCandidate = typeof decisionRoomCandidates.$inferSelect;
+export type InsertDecisionRoomCandidate = typeof decisionRoomCandidates.$inferInsert;
+
 // ─── Agent Claims ─────────────────────────────────────────────────────────────
 // Each agent produces discrete claims during a decision room deliberation.
 export const agentClaims = mysqlTable("agent_claims", {

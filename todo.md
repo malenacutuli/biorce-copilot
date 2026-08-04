@@ -157,3 +157,32 @@
 - [x] Confirm roomSource: auto on auto-created rooms; user_confirmed on confirmed rooms
 - [x] Confirm all five seeded rooms have empty executiveDecision in production DB
 - [x] Resolve deployment state: confirm production is published and GitHub is synchronized
+
+## Phase: User-Confirmed Decision Room Creation (v1.3-confirmed)
+- [ ] Add confirmDecisionRoomCandidate tRPC procedure: creates room with roomSource:user_confirmed, preserves gate metadata, handles duplicate actions (add_evidence/open_existing/create_separate)
+- [ ] Add idempotency key to prevent double-click duplication (candidateId = hash of question+userId+timestamp)
+- [ ] Guard: approved/historical/rejected duplicate rooms cannot have evidence appended
+- [ ] Update DecisionRoomPromptBanner: call confirmDecisionRoomCandidate mutation, navigate to /decision-rooms/:roomId on success
+- [ ] Disable button while mutation is pending
+- [ ] Show three-way duplicate choice UI when duplicateCandidate exists
+- [ ] Integration tests: confirm creation, roomSource:user_confirmed, gate metadata, redirect, duplicate choices, approved-room guard, idempotency
+- [ ] Deployment verification: confirm biorceai-7kuvypir.manus.space reports commit eee6121d
+
+## Secure Candidate Issuance (Phase: confirmCandidate v2)
+- [x] Add decision_room_candidates table to schema (token, userId, expiresAt, consumed, gate metadata)
+- [x] Migrate DB: generate and apply migration
+- [x] Issue server-side candidate token in copilot.ask (promptUser path)
+- [x] Wrap confirmCandidate in a DB transaction: consume candidate + create/update room atomically
+- [x] Validate candidate: bound to user, not expired, not consumed
+- [x] Reject client-supplied gate metadata (use server-stored candidate data only)
+- [x] Update Copilot.tsx banner to use server-issued candidateId from response
+- [x] Pass duplicateCandidate from copilot.ask response to banner
+- [x] Write full test suite (creation, roomSource, metadata, idempotency, expiry, duplicate choices, auth, client-metadata rejection) -- 10 tests passing
+- [ ] Verify end-to-end UI path: medium-confidence → banner → create room → redirect → verify advisory/awaiting
+- [x] Migrate decision_room_candidates schema: tokenHash + payloadJson, drop individual gate columns
+- [x] Rewrite issueDecisionRoomCandidate: SHA-256 hash storage, payload JSON, return raw token once
+- [x] Rewrite confirmCandidate: hash lookup, atomic consumption, no client room targeting
+- [x] Add scheduled cleanup for expired unconsumed candidates
+- [x] Update Copilot.tsx banner to use new token field name
+- [x] Update integration tests for secure token design (10 tests, all passing)
+- [x] Update integration tests for secure token design (12 tests, all passing: create_separate, client metadata rejection added)

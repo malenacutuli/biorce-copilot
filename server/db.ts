@@ -699,7 +699,7 @@ export async function getDecisionRoomById(id: number) {
 export async function findSimilarDecisionRoom(
   question: string,
   partnerId?: number | null
-): Promise<typeof decisionRooms.$inferSelect | null> {
+): Promise<{ room: typeof decisionRooms.$inferSelect; similarity: number } | null> {
   const db = await getDb();
   if (!db) return null;
   const { like, or, and, eq, inArray, desc: descOp } = await import("drizzle-orm");
@@ -725,7 +725,9 @@ export async function findSimilarDecisionRoom(
   });
   scored.sort((a, b) => b.score - a.score);
   // Require at least 3 keyword overlaps to consider it a duplicate
-  return scored[0]?.score >= 3 ? scored[0].row : null;
+  if (!scored[0] || scored[0].score < 3) return null;
+  const similarity = Math.min(100, Math.round((scored[0].score / Math.max(keywords.length, 1)) * 100));
+  return { room: scored[0].row, similarity };
 }
 
 export async function updateDecisionRoom(id: number, data: Partial<Omit<InsertDecisionRoom, "id" | "createdAt">>) {
@@ -984,4 +986,103 @@ export async function countConsecutiveFailures(jobName: string): Promise<number>
     .orderBy(desc(jobExecutions.startedAt))
     .limit(3);
   return recent.filter(r => r.status === "failed").length;
+}
+
+// ─── Decision Room Candidates ─────────────────────────────────────────────────
+// Secure token design: the raw token is returned once to the client and NEVER
+// stored. Only the SHA-256 hex digest is persisted. All gate metadata is frozen
+// in payloadJson at issuance time — the client cannot modify any field.
+import { randomBytes, createHash } from "crypto";
+import {
+  DecisionRoomCandidate, decisionRoomCandidates,
+} from "../drizzle/schema";
+
+export type CandidatePayload = {
+  question: string;
+  normalizedQuestion: string;
+  gateConfidence: number;
+  gateMateriality: string;
+  gateRationale: string;
+  gateVersion: string;
+  gateAlternatives: string[];
+  gateProposedOwner: string | null;
+  gateProposedDeadline: string | null;
+  duplicateRoomId: number | null;
+  duplicateSimilarity: number | null;
+  duplicateStatus: string | null;
+  duplicateQuestion: string | null;
+  copilotRunId: string | null;
+};
+
+/**
+ * Issue a new server-side candidate.
+ * Returns the raw token (returned once to the client, never stored).
+ * Stores only the SHA-256 hash of the token in the database.
+ * Expires in 30 minutes.
+ */
+export async function issueDecisionRoomCandidate(
+  userOpenId: string,
+  payload: CandidatePayload,
+  ttlMs = 30 * 60 * 1000
+): Promise<string> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const rawToken = randomBytes(32).toString("base64url");
+  const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+  const expiresAt = new Date(Date.now() + ttlMs);
+  await db.insert(decisionRoomCandidates).values({
+    tokenHash,
+    userOpenId,
+    payloadJson: payload,
+    expiresAt,
+  } as any);
+  // Return the raw token — this is the ONLY time it is available
+  return rawToken;
+}
+
+/**
+ * Fetch a candidate by raw token (hashes it internally).
+ * Returns undefined if not found.
+ */
+export async function getDecisionRoomCandidate(rawToken: string): Promise<DecisionRoomCandidate | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+  const result = await db.select().from(decisionRoomCandidates).where(eq(decisionRoomCandidates.tokenHash, tokenHash)).limit(1);
+  return result[0];
+}
+
+/**
+ * Mark a candidate as consumed, recording the action and resulting room ID.
+ * Uses the raw token (hashed internally).
+ */
+export async function consumeDecisionRoomCandidate(
+  rawToken: string,
+  resultingRoomId: number,
+  action: string
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+  await db.update(decisionRoomCandidates).set({
+    consumedAt: new Date(),
+    consumedAction: action,
+    resultingRoomId,
+  }).where(eq(decisionRoomCandidates.tokenHash, tokenHash));
+}
+
+/**
+ * Delete expired unconsumed candidates older than the given cutoff.
+ * Called by the scheduled cleanup job.
+ */
+export async function deleteExpiredCandidates(cutoff: Date): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db.delete(decisionRoomCandidates).where(
+    and(
+      lt(decisionRoomCandidates.expiresAt, cutoff),
+      sql`${decisionRoomCandidates.consumedAt} IS NULL`
+    )
+  );
+  return (result as any)[0]?.affectedRows ?? 0;
 }

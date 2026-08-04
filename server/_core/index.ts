@@ -8,7 +8,7 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
-import { weeklyDigestHandler, dailyPartnershipPulseHandler } from "../scheduledHandlers";
+import { weeklyDigestHandler, dailyPartnershipPulseHandler, candidateCleanupHandler } from "../scheduledHandlers";
 import {
   regulatoryWatchHandler,
   competitiveIntelHandler,
@@ -53,6 +53,7 @@ async function startServer() {
   // Scheduled handlers (Heartbeat cron callbacks)
   app.post("/api/scheduled/weekly-digest", weeklyDigestHandler);
   app.post("/api/scheduled/daily-partnership-pulse", dailyPartnershipPulseHandler);
+  app.post("/api/scheduled/candidate-cleanup", candidateCleanupHandler);
   // Autonomous agent cron handlers
   app.post("/api/scheduled/agent-regulatory-watch", regulatoryWatchHandler);
   app.post("/api/scheduled/agent-competitive-intel", competitiveIntelHandler);

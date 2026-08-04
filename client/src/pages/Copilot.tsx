@@ -4,9 +4,9 @@ import {
   AlertTriangle, Brain, CheckCircle2, ChevronDown, ChevronUp,
   Cpu, FileText, FolderOpen, Lightbulb, Send, Shield, Sparkles, Target, X, Zap
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useRef, useState, useCallback } from "react";
 import { Streamdown } from "streamdown";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -53,18 +53,53 @@ type Message = {
     proposedDeadline: string | null;
     autoCreated: boolean;
     promptUser: boolean;
+    candidateToken?: string;
+    gateVersion?: string;
   };
+};
+type DuplicateCandidateInfo = { roomId: number; similarity: number; status: string; question: string } | null;
+// Extend Message gateResult to include duplicateCandidate from server
+type FullGateResult = NonNullable<Message["gateResult"]> & {
+  duplicateCandidate?: DuplicateCandidateInfo;
 };
 
 // ─── Decision Room Prompt Banner ─────────────────────────────────────────────
 
-function DecisionRoomPromptBanner({ gateResult }: { gateResult: NonNullable<Message["gateResult"]> }) {
+type DuplicateCandidate = { roomId: number; similarity: number; status: string; question: string } | null;
+
+function DecisionRoomPromptBanner({
+  gateResult,
+  duplicateCandidate,
+}: {
+  gateResult: NonNullable<Message["gateResult"]>;
+  duplicateCandidate?: DuplicateCandidate;
+}) {
   const [dismissed, setDismissed] = useState(false);
+  const [, setLocation] = useLocation();
+  const confirmMutation = trpc.decisionRooms.confirmCandidate.useMutation();
+
+  const handleConfirm = useCallback(async (duplicateAction?: "add_evidence" | "open_existing" | "create_separate") => {
+    if (!gateResult.candidateToken) return;
+    try {
+      const result = await confirmMutation.mutateAsync({
+        candidateToken: gateResult.candidateToken,
+        duplicateAction: duplicateAction,
+      });
+      setLocation(`/decision-rooms/${result.roomId}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[DecisionRoomPromptBanner] confirmCandidate failed:", msg);
+    }
+  }, [gateResult, duplicateCandidate, confirmMutation, setLocation]);
+
   if (dismissed) return null;
   const materialityColor =
     gateResult.materiality === "critical" ? "oklch(0.65 0.18 0)" :
     gateResult.materiality === "high" ? "oklch(0.65 0.18 30)" :
     "oklch(0.65 0.18 60)";
+  const closedStatuses = ["approved", "modified", "rejected"];
+  const isDuplicateClosed = duplicateCandidate ? closedStatuses.includes(duplicateCandidate.status) : false;
+
   return (
     <div
       className="mb-3 rounded-xl p-4"
@@ -86,29 +121,62 @@ function DecisionRoomPromptBanner({ gateResult }: { gateResult: NonNullable<Mess
                 <span> · Alternatives: {gateResult.alternatives.slice(0, 2).join(" vs ")}</span>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              <Link
-                href="/decision-rooms"
-                className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all duration-150"
-                style={{
-                  background: materialityColor,
-                  color: "oklch(0.98 0 0)",
-                }}
-              >
-                <FolderOpen className="w-3 h-3" />
-                Open Decision Room
-              </Link>
-              <button
-                onClick={() => setDismissed(true)}
-                className="text-xs px-3 py-1.5 rounded-lg transition-all duration-150"
-                style={{
-                  background: "var(--color-accent)",
-                  color: "var(--color-muted-foreground)",
-                }}
-              >
-                Keep as conversation
-              </button>
-            </div>
+
+            {/* Three-way duplicate choice */}
+            {duplicateCandidate ? (
+              <div className="flex flex-col gap-2">
+                <div className="text-xs rounded-lg px-3 py-2" style={{ background: "var(--color-accent)", color: "var(--color-muted-foreground)" }}>
+                  <span className="font-medium">Similar room found</span> ({duplicateCandidate.similarity}% match · status: {duplicateCandidate.status}):{" "}
+                  <span className="italic opacity-75">{duplicateCandidate.question.slice(0, 70)}{duplicateCandidate.question.length > 70 ? "…" : ""}</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    disabled={confirmMutation.isPending || isDuplicateClosed}
+                    onClick={() => handleConfirm("add_evidence")}
+                    className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.97]"
+                    style={{ background: materialityColor, color: "oklch(0.98 0 0)" }}
+                    title={isDuplicateClosed ? "Cannot append to a closed room" : undefined}
+                  >
+                    {confirmMutation.isPending ? "…" : "Add evidence to existing room"}
+                  </button>
+                  <button
+                    disabled={confirmMutation.isPending}
+                    onClick={() => handleConfirm("open_existing")}
+                    className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all duration-150 disabled:opacity-40 active:scale-[0.97]"
+                    style={{ background: "var(--color-accent)", color: "var(--color-accent-foreground)" }}
+                  >
+                    Open existing room
+                  </button>
+                  <button
+                    disabled={confirmMutation.isPending}
+                    onClick={() => handleConfirm("create_separate")}
+                    className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all duration-150 disabled:opacity-40 active:scale-[0.97]"
+                    style={{ background: "var(--color-secondary)", color: "var(--color-secondary-foreground)" }}
+                  >
+                    Create separate Decision Room
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <button
+                  disabled={confirmMutation.isPending}
+                  onClick={() => handleConfirm()}
+                  className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all duration-150 disabled:opacity-60 active:scale-[0.97]"
+                  style={{ background: materialityColor, color: "oklch(0.98 0 0)" }}
+                >
+                  <FolderOpen className="w-3 h-3" />
+                  {confirmMutation.isPending ? "Opening…" : "Open Decision Room"}
+                </button>
+                <button
+                  onClick={() => setDismissed(true)}
+                  className="text-xs px-3 py-1.5 rounded-lg transition-all duration-150"
+                  style={{ background: "var(--color-accent)", color: "var(--color-muted-foreground)" }}
+                >
+                  Keep as conversation
+                </button>
+              </div>
+            )}
           </div>
         </div>
         <button onClick={() => setDismissed(true)} style={{ color: "var(--color-muted-foreground)" }}>
@@ -569,7 +637,10 @@ export default function Copilot() {
                 <div className="max-w-3xl w-full">
                   {/* Decision Room prompt banner — shown when gate confidence is 55-79 */}
                   {msg.gateResult?.promptUser && (
-                    <DecisionRoomPromptBanner gateResult={msg.gateResult} />
+                    <DecisionRoomPromptBanner
+                      gateResult={msg.gateResult}
+                      duplicateCandidate={(msg.gateResult as FullGateResult)?.duplicateCandidate ?? null}
+                    />
                   )}
                   {/* Auto-created notification */}
                   {msg.gateResult?.autoCreated && (
