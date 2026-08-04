@@ -92,11 +92,8 @@ export async function seedNovoNordiskDecisionRoom() {
     conflictingAgents: ["red-team-risk", "legal-data-rights"] as any,
     agentsInvoked: ["partnership-intelligence", "scientific-evidence", "commercial", "legal-data-rights", "red-team-risk"] as any,
     debateRounds: 2,
-    executiveDecision: "more_evidence",
-    executiveNotes: "Proceed to term sheet negotiation. Confirm fast-track procurement possibility and publication governance framework before signing. Target: term sheet by August 10.",
     decisionOwner: "Pedro Coelho",
     decisionDeadline: new Date("2026-08-10"),
-    decisionMadeAt: new Date(),
   });
 
   const roomId = room.insertId as unknown as number;

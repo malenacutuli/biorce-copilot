@@ -2,10 +2,11 @@ import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import {
   AlertTriangle, Brain, CheckCircle2, ChevronDown, ChevronUp,
-  Cpu, FileText, Lightbulb, Send, Shield, Sparkles, Target, Zap
+  Cpu, FileText, FolderOpen, Lightbulb, Send, Shield, Sparkles, Target, X, Zap
 } from "lucide-react";
 import { useRef, useState } from "react";
 import { Streamdown } from "streamdown";
+import { Link } from "wouter";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -42,7 +43,81 @@ type Message = {
   orchestratedAnswer?: OrchestratedAnswer;
   agentResults?: AgentResult[];
   sources?: Source[];
+  gateResult?: {
+    isDecision: boolean;
+    confidence: number;
+    materiality: string;
+    rationale: string;
+    alternatives: string[];
+    proposedOwner: string | null;
+    proposedDeadline: string | null;
+    autoCreated: boolean;
+    promptUser: boolean;
+  };
 };
+
+// ─── Decision Room Prompt Banner ─────────────────────────────────────────────
+
+function DecisionRoomPromptBanner({ gateResult }: { gateResult: NonNullable<Message["gateResult"]> }) {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed) return null;
+  const materialityColor =
+    gateResult.materiality === "critical" ? "oklch(0.65 0.18 0)" :
+    gateResult.materiality === "high" ? "oklch(0.65 0.18 30)" :
+    "oklch(0.65 0.18 60)";
+  return (
+    <div
+      className="mb-3 rounded-xl p-4"
+      style={{
+        background: "oklch(0.65 0.18 60 / 0.08)",
+        border: "1px solid oklch(0.65 0.18 60 / 0.35)",
+      }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-2.5 flex-1 min-w-0">
+          <FolderOpen className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: materialityColor }} />
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-semibold mb-1" style={{ color: materialityColor }}>
+              This question may require a Decision Room
+            </div>
+            <div className="text-xs mb-2.5" style={{ color: "var(--color-muted-foreground)" }}>
+              Gate confidence: {gateResult.confidence}% · Materiality: {gateResult.materiality}
+              {gateResult.alternatives.length > 0 && (
+                <span> · Alternatives: {gateResult.alternatives.slice(0, 2).join(" vs ")}</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Link
+                href="/decision-rooms"
+                className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all duration-150"
+                style={{
+                  background: materialityColor,
+                  color: "oklch(0.98 0 0)",
+                }}
+              >
+                <FolderOpen className="w-3 h-3" />
+                Open Decision Room
+              </Link>
+              <button
+                onClick={() => setDismissed(true)}
+                className="text-xs px-3 py-1.5 rounded-lg transition-all duration-150"
+                style={{
+                  background: "var(--color-accent)",
+                  color: "var(--color-muted-foreground)",
+                }}
+              >
+                Keep as conversation
+              </button>
+            </div>
+          </div>
+        </div>
+        <button onClick={() => setDismissed(true)} style={{ color: "var(--color-muted-foreground)" }}>
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // ─── Domain colours ───────────────────────────────────────────────────────────
 
@@ -369,6 +444,7 @@ export default function Copilot() {
         orchestratedAnswer: (result.orchestratedAnswer as unknown as OrchestratedAnswer) ?? undefined,
         agentResults: (result.agentResults as unknown as AgentResult[]) ?? [],
         sources: result.sourcesUsed ?? [],
+        gateResult: (result.gateResult as Message["gateResult"]) ?? undefined,
       };
       setMessages(prev => [...prev, msg]);
     } catch {
@@ -491,6 +567,27 @@ export default function Copilot() {
                 </div>
               ) : (
                 <div className="max-w-3xl w-full">
+                  {/* Decision Room prompt banner — shown when gate confidence is 55-79 */}
+                  {msg.gateResult?.promptUser && (
+                    <DecisionRoomPromptBanner gateResult={msg.gateResult} />
+                  )}
+                  {/* Auto-created notification */}
+                  {msg.gateResult?.autoCreated && (
+                    <div
+                      className="mb-3 rounded-lg px-4 py-2.5 flex items-center gap-2.5 text-xs"
+                      style={{
+                        background: "oklch(0.55 0.18 145 / 0.12)",
+                        border: "1px solid oklch(0.55 0.18 145 / 0.35)",
+                        color: "oklch(0.75 0.15 145)",
+                      }}
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span>
+                        Decision Room opened automatically — this question meets the governance threshold.{" "}
+                        <Link href="/decision-rooms" className="underline font-medium">View rooms →</Link>
+                      </span>
+                    </div>
+                  )}
                   {msg.orchestratedAnswer ? (
                     <StructuredAnswer
                       answer={msg.orchestratedAnswer}

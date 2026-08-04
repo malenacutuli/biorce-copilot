@@ -143,3 +143,17 @@
 - [x] consensusVerdict enum: go, conditional_go, hold, no_go, insufficient_evidence
 - [x] Seeded working hypotheses use consensusVerdict only; executiveDecision remains empty until human acts
 - [x] ctx.user available in copilot.ask mutation (destructured from handler args)
+
+## Gate Phase 2 Corrections
+- [x] Fix exclusion logic: detect decision signals first, apply informational exclusions only when no decision signal exists
+- [x] Add adversarial tests: "How does choosing Veeva over Medidata affect…?" scores as decision; "What is CDISC USDM?" scores as informational
+- [x] Rewrite classifier with precedence model: hasDecisionIntent evaluated before isInformational; never exclude when decision intent is present
+- [x] Weighted scoring: material_choice 30, alternatives+implicit_yesno 25, consequences 25, owner 10, deadline 10
+- [x] Treat binary decisions as implicit alternatives (proceed vs not proceed)
+- [x] Log only gate version, signals, score, tier — never full question or entity names in production logs
+- [x] Regression test: 8 cases from spec (4 decision candidates, 2 normal, 2 immediate exclusions)
+- [x] Redesign duplicate detection: return duplicateCandidate object instead of auto-appending; never append to approved/rejected/historical rooms
+- [x] Render promptUser flow in Copilot UI: show confirmation banner with "Open Decision Room" / "Dismiss" actions
+- [x] Confirm roomSource: auto on auto-created rooms; user_confirmed on confirmed rooms
+- [x] Confirm all five seeded rooms have empty executiveDecision in production DB
+- [x] Resolve deployment state: confirm production is published and GitHub is synchronized

@@ -585,27 +585,23 @@ export interface DecisionGateResult {
   gateVersion: string;
 }
 
-/**
- * Immediate exclusion patterns — these question types are NEVER Decision Rooms.
- * Returns true if the question should be excluded.
- */
-function isImmediateExclusion(q: string): boolean {
-  // "What is / What are / What does" — definitional questions
-  if (/^what\s+(is|are|does|do|was|were|has|have)\b/.test(q)) return true;
-  // "How does / How do / How can" — explanatory questions
-  if (/^how\s+(does|do|can|could|would|to)\b/.test(q)) return true;
-  // "Tell me about / Explain / Describe / Summarize / List / Give me"
-  if (/^(tell\s+me|explain|describe|summarize|summarise|list|give\s+me|show\s+me|find|search|look\s+up)\b/.test(q)) return true;
-  // "What happened / What is the status / What is the current"
-  if (/what\s+(happened|is\s+the\s+status|is\s+the\s+current|are\s+the\s+latest)\b/.test(q)) return true;
-  // Draft / write / rewrite / generate text
-  if (/\b(draft|write|rewrite|generate|create\s+a\s+(template|email|memo|brief|deck))\b/.test(q)) return true;
-  return false;
-}
+// ── Pattern constants ─────────────────────────────────────────────────────────
+const DECISION_VERBS = /\bshould\s+(we|biorce|i)\b|\bwhether\s+(we|biorce|to)\b|\bchoose\b|\bchoosing\b|\bselect\b|\bprioritize\b|\bprioritise\b|\bproceed\b|\bapprove\b|\breject\b|\bsign\b|\benter\b|\bexit\b|\bterminate\b|\bpause\b|\binvest\b|\bcommit\b/i;
+const WHETHER_PATTERN = /\bwhether\b/i;
+const CHOICE_PATTERN = /\bchoose\b|\bchoosing\b|\bselect\b|\bprioritize\b|\bprioritise\b|\bbest\s+\S+\s+(partner|option|route|strategy|vendor|platform)\b/i;
+const YES_NO_COMMITMENT = /\bshould\s+(we|biorce|i)\b|\brecommend\s+whether\b|\badvise\s+(us\s+)?whether\b/i;
+const INFORMATIONAL_PREFIX = /^(what\s+(is|are|does|do|was|were|has|have)|how\s+(does|do|can|could|would|to)|explain|describe|summarize|summarise|list|give\s+me|show\s+me|find|search|look\s+up|tell\s+me\s+about|what\s+happened|what\s+is\s+the\s+status|what\s+is\s+the\s+current)\b/i;
+const INFORMATIONAL_REQUEST = /^(draft|write|rewrite|generate|create\s+a\s+(template|email|memo|brief|deck))\b/i;
+const EXPLICIT_ALTERNATIVES = /\bversus\b|\bvs\.?\b|\bbetween\b|\bover\b/i;
+const OR_ALTERNATIVES = /\b(\w[\w-]*)\s+or\s+(\w[\w-]*)\b/i;
 
 /**
- * Full 5-signal structured classifier.
- * Requires at least 3 of 5 signals for a Decision Room to be created.
+ * Precedence-model Decision Room gate classifier.
+ * Evaluation order:
+ *   1. Detect decision intent (DECISION_VERBS, WHETHER_PATTERN, CHOICE_PATTERN, YES_NO_COMMITMENT)
+ *   2. Detect informational form (INFORMATIONAL_PREFIX, INFORMATIONAL_REQUEST)
+ *   3. Exclude ONLY when informational AND no decision intent
+ *   4. Weighted signal scoring (choice 30, alternatives+implicit_yesno 25, consequences 25, owner 10, deadline 10)
  *
  * Confidence tiers:
  *   >= 80 + materiality high/critical  → create automatically
@@ -613,51 +609,26 @@ function isImmediateExclusion(q: string): boolean {
  *   < 55                               → keep as normal Copilot conversation
  */
 export function classifyDecisionGate(question: string): DecisionGateResult {
-  const GATE_VERSION = "v1.1";
+  const GATE_VERSION = "v1.3-precedence";
   const q = question.toLowerCase().trim();
   const signalsMatched: string[] = [];
   const alternatives: string[] = [];
   let proposedOwner: string | null = null;
   let proposedDeadline: string | null = null;
 
-  // ── Signal 1: Material choice or commitment ──────────────────────────────
-  const hasMaterialChoice = /\bshould\b|\bwhether\b|\bprioritize\b|\bchoose\b|\bdecide\b|\bselect\b|\bcommit\b|\bproceed\b/.test(q);
-  if (hasMaterialChoice) signalsMatched.push("material_choice");
+  // ── Step 1: Detect decision intent (BEFORE any exclusion check) ──────────
+  const hasDecisionIntent = (
+    DECISION_VERBS.test(q) ||
+    WHETHER_PATTERN.test(q) ||
+    CHOICE_PATTERN.test(q) ||
+    YES_NO_COMMITMENT.test(q)
+  );
 
-  // ── Signal 2: Two or more plausible alternatives ─────────────────────────
-  const altMatch = q.match(/\b(\w+(?:\s+\w+)?)\s+(?:or|vs\.?|versus)\s+(\w+(?:\s+\w+)?)/);
-  const hasAlternatives = /\bor\b|\bvs\b|\bversus\b|\balternative\b|\boption\b|\bbetween\b|\bcompare\b/.test(q);
-  if (hasAlternatives) {
-    signalsMatched.push("alternatives_present");
-    if (altMatch) {
-      alternatives.push(altMatch[1].trim(), altMatch[2].trim());
-    }
-  }
+  // ── Step 2: Detect informational form ────────────────────────────────────
+  const isInformational = INFORMATIONAL_PREFIX.test(q) || INFORMATIONAL_REQUEST.test(q);
 
-  // ── Signal 3: Meaningful consequences ────────────────────────────────────
-  const hasConsequences = /\b(partner|invest|commit|sign|launch|approve|engage|pursue|revenue|contract|deal|agreement|regulatory|compliance|risk|liability|budget|headcount|roadmap)\b/.test(q);
-  if (hasConsequences) signalsMatched.push("meaningful_consequences");
-
-  // ── Signal 4: Identifiable decision owner ────────────────────────────────
-  const ownerMatch = q.match(/\b(pedro|malena|ceo|cto|coo|board|team|biorce|head\s+of\s+\w+)\b/);
-  if (ownerMatch) {
-    signalsMatched.push("decision_owner");
-    proposedOwner = ownerMatch[1];
-  }
-
-  // ── Signal 5: Decision deadline or triggering event ──────────────────────
-  const deadlineMatch = q.match(/\b(before|by|until|deadline|q[1-4]\s*\d{4}|august|september|october|november|december|january|\d{4}|next\s+\w+|this\s+\w+|within\s+\d+)\b/);
-  const hasTrigger = /\b(before|by|deadline|trigger|when|if\s+we|once|after|upon|following)\b/.test(q);
-  if (deadlineMatch || hasTrigger) {
-    signalsMatched.push("deadline_or_trigger");
-    if (deadlineMatch) proposedDeadline = deadlineMatch[1];
-  }
-
-  // ── Scoring ───────────────────────────────────────────────────────────────
-  const signalCount = signalsMatched.length;
-
-  // Immediate exclusion check
-  if (isImmediateExclusion(q)) {
+  // ── Step 3: Exclude ONLY when informational AND no decision intent ────────
+  if (isInformational && !hasDecisionIntent) {
     return {
       isDecision: false,
       materiality: "low",
@@ -672,35 +643,76 @@ export function classifyDecisionGate(question: string): DecisionGateResult {
     };
   }
 
-  // Require at least 3 of 5 signals
-  if (signalCount < 3) {
-    return {
-      isDecision: false,
-      materiality: "low",
-      confidence: Math.min(40, signalCount * 15),
-      normalizedQuestion: question,
-      alternatives,
-      proposedOwner,
-      proposedDeadline,
-      rationale: `Only ${signalCount}/5 decision signals matched (${signalsMatched.join(", ") || "none"}). Minimum 3 required.`,
-      signalsMatched,
-      gateVersion: GATE_VERSION,
-    };
+  // ── Step 4: Weighted signal scoring ──────────────────────────────────────
+  // Weights: material_choice 30, alternatives+implicit_yesno 25, consequences 25, owner 10, deadline 10
+  let weightedScore = 0;
+
+  // Signal A: Material choice or commitment (weight 30)
+  const hasMaterialChoice = DECISION_VERBS.test(q) || WHETHER_PATTERN.test(q) || CHOICE_PATTERN.test(q) || YES_NO_COMMITMENT.test(q);
+  if (hasMaterialChoice) {
+    signalsMatched.push("material_choice");
+    weightedScore += 30;
   }
 
-  // Materiality scoring
+  // Signal B: Alternatives — explicit OR implicit yes/no (weight 25)
+  // Binary decisions ("should we proceed?") have two implicit alternatives: proceed / do not proceed.
+  // Any question with a decision verb inherently has at least two options.
+  const hasExplicitAlts = EXPLICIT_ALTERNATIVES.test(q) || OR_ALTERNATIVES.test(q) || /\balternative\b|\boption\b|\bcompare\b/.test(q);
+  const hasImplicitYesNo = hasMaterialChoice;
+  const altMatch = q.match(/\b(\w[\w-]*)\s+(?:or|vs\.?|versus|over)\s+(\w[\w-]*)/);
+  if (hasExplicitAlts || hasImplicitYesNo) {
+    signalsMatched.push(hasExplicitAlts ? "alternatives_explicit" : "alternatives_implicit_yesno");
+    weightedScore += 25;
+    if (altMatch) {
+      alternatives.push(altMatch[1].trim(), altMatch[2].trim());
+    } else if (hasImplicitYesNo && !hasExplicitAlts) {
+      alternatives.push("proceed", "do not proceed");
+    }
+  }
+
+  // Signal C: Meaningful consequences (weight 25)
+  const hasConsequences = (
+    /\b(partner|invest|commit|sign|launch|approve|engage|pursue|revenue|contract|deal|agreement|regulatory|compliance|risk|liability|budget|headcount|roadmap)\b/.test(q) ||
+    /\b(distribution|strategy|execution|pipeline|integration|adoption|moat|milestone|series\s+[ab]|fundraise|acquisition)\b/.test(q) ||
+    /\b(affect|impact|implication|consequence|outcome|result|effect)\b/.test(q)
+  );
+  if (hasConsequences) {
+    signalsMatched.push("meaningful_consequences");
+    weightedScore += 25;
+  }
+
+  // Signal D: Identifiable decision owner (weight 10)
+  const ownerMatch = q.match(/\b(pedro|malena|ceo|cto|coo|board|team|biorce|head\s+of\s+\w+)\b/);
+  if (ownerMatch) {
+    signalsMatched.push("decision_owner");
+    proposedOwner = ownerMatch[1];
+    weightedScore += 10;
+  }
+
+  // Signal E: Decision deadline or triggering event (weight 10)
+  const deadlineMatch = q.match(/\b(before|by|until|deadline|q[1-4]\s*\d{4}|august|september|october|november|december|january|\d{4}|next\s+\w+|this\s+\w+|within\s+\d+)\b/);
+  const hasTrigger = /\b(before|by|deadline|trigger|when|if\s+we|once|after|upon|following)\b/.test(q);
+  if (deadlineMatch || hasTrigger) {
+    signalsMatched.push("deadline_or_trigger");
+    if (deadlineMatch) proposedDeadline = deadlineMatch[1];
+    weightedScore += 10;
+  }
+
+  // ── Step 5: Materiality ───────────────────────────────────────────────────
   let materiality: GateMateriality = "medium";
   const criticalTerms = /\b(invest|commit|sign|contract|regulatory|compliance|series\s+b|fundraise|acquisition|merger|exclusivity|ip\s+rights|data\s+rights)\b/.test(q);
   const highTerms = /\b(partner|launch|approve|pursue|proceed|engage|deal|agreement|budget|headcount)\b/.test(q);
   if (criticalTerms) materiality = "critical";
-  else if (highTerms) materiality = "high";
-  else if (signalCount >= 4) materiality = "high";
+  else if (highTerms || weightedScore >= 80) materiality = "high";
 
-  // Confidence: base 50 + 10 per signal + materiality bonus
-  const materialityBonus = materiality === "critical" ? 20 : materiality === "high" ? 10 : 0;
-  const confidence = Math.min(95, 50 + (signalCount * 10) + materialityBonus);
-
+  // ── Step 6: Confidence ────────────────────────────────────────────────────
+  // weightedScore is already 0-100 (max 30+25+25+10+10 = 100)
+  const materialityBonus = materiality === "critical" ? 5 : materiality === "high" ? 3 : 0;
+  const confidence = Math.min(95, weightedScore + materialityBonus);
   const isDecision = confidence >= 55;
+
+  // ── Step 7: Safe logging (no question text, no entity names) ─────────────
+  console.log(`[DecisionGate] version=${GATE_VERSION} signals=[${signalsMatched.join(",")}] score=${weightedScore} confidence=${confidence} tier=${isDecision ? (confidence >= 80 ? "auto" : "prompt") : "skip"} materiality=${materiality}`);
 
   return {
     isDecision,
@@ -711,8 +723,8 @@ export function classifyDecisionGate(question: string): DecisionGateResult {
     proposedOwner,
     proposedDeadline,
     rationale: isDecision
-      ? `${signalCount}/5 signals matched: ${signalsMatched.join(", ")}. Materiality: ${materiality}.`
-      : `${signalCount}/5 signals matched but confidence ${confidence} below threshold (55).`,
+      ? `${signalsMatched.length} signals matched: ${signalsMatched.join(", ")}. Weighted score: ${weightedScore}. Materiality: ${materiality}.`
+      : `Weighted score ${weightedScore} below threshold (55). Signals: ${signalsMatched.join(", ") || "none"}.`,
     signalsMatched,
     gateVersion: GATE_VERSION,
   };
